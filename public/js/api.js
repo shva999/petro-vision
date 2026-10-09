@@ -224,7 +224,7 @@ async function getStations() {
       fuelType: report?.fuelType || "",
       price: report?.price ?? 0,
       availability: availability?.status || (availability ? (availability.available ? "In Stock" : "Out of Stock") : "Unknown"),
-      submittedBy: report?.userId || station.createdBy,
+      submittedBy: report?.userId,
       date: report?.reportedAt || station.createdAt || "",
       verified: report?.verified ?? station.verified,
       approvalStatus: report?.status ? report.status[0].toUpperCase() + report.status.slice(1) : (station.verified ? "Approved" : "Pending"),
