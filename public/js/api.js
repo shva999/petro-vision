@@ -35,6 +35,7 @@ const API_BASE = (configuredApiUrl || (
     : `${location.origin}/api`
 )).replace(/\/$/, "");
 const SESSION_KEY = "petrovision-api-session";
+let sessionRefreshPromise;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, character => ({
@@ -76,6 +77,34 @@ function setSession(user, accessToken, refreshToken) {
 function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
+async function refreshSession(session) {
+  const currentSession = getSession();
+  if (currentSession?.accessToken !== session.accessToken) return currentSession;
+  if (!sessionRefreshPromise) {
+    sessionRefreshPromise = (async () => {
+      try {
+        const response = await fetch(`${API_BASE}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: session.refreshToken })
+        });
+        if (!response.ok) return null;
+        const refreshed = await response.json();
+        if (!refreshed?.accessToken || !refreshed?.refreshToken) return null;
+        const latestSession = getSession();
+        if (latestSession?.accessToken !== session.accessToken) return latestSession;
+        setSession(session.user, refreshed.accessToken, refreshed.refreshToken);
+        return getSession();
+      } catch (error) {
+        console.error("Could not refresh the PetroVision session.", error);
+        return null;
+      } finally {
+        sessionRefreshPromise = null;
+      }
+    })();
+  }
+  return sessionRefreshPromise;
+}
 function requireAuth() {
   const session = getSession();
   if (!session?.accessToken || !session?.user) {
@@ -110,19 +139,8 @@ async function apiRequest(path, options = {}, allowRefresh = true) {
     throw new Error(`Unable to reach the PetroVision API at ${API_BASE}. Start the backend and check the API URL.`, { cause: error });
   }
   if (response.status === 401 && allowRefresh && session?.refreshToken) {
-    let refresh;
-    try {
-      const refreshResponse = await fetch(`${API_BASE}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: session.refreshToken })
-      });
-      refresh = refreshResponse.ok ? await refreshResponse.json() : null;
-    } catch (error) {
-      console.error("Could not refresh the PetroVision session.", error);
-    }
-    if (refresh?.accessToken && refresh?.refreshToken) {
-      setSession(session.user, refresh.accessToken, refresh.refreshToken);
+    const refreshedSession = await refreshSession(session);
+    if (refreshedSession?.accessToken) {
       return apiRequest(path, options, false);
     }
     clearSession();
