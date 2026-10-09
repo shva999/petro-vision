@@ -44,6 +44,19 @@ export async function loadOwnedRecords<T extends { id: string; ownerId: string }
   return loaded;
 }
 
+export async function loadMatchingRecords<T extends { id: string }>(
+  collectionName: string,
+  records: Map<string, T>,
+  field: string,
+  value: string
+): Promise<T[]> {
+  if (!firestore) return [...records.values()].filter((record) => (record as Record<string, unknown>)[field] === value);
+  const snapshot = await firestore.collection(collectionName).where(field, "==", value).get();
+  const loaded = snapshot.docs.map((document) => document.data() as T);
+  for (const record of loaded) records.set(record.id, record);
+  return loaded;
+}
+
 export async function saveRecord<T extends object>(collectionName: string, records: Map<string, T>, id: string, record: T): Promise<void> {
   if (firestore) await firestore.collection(collectionName).doc(id).set(record);
   records.set(id, record);
