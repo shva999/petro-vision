@@ -67,13 +67,15 @@ remains in place:
    `https://your-api-project.vercel.app/api/health`, then test registration,
    sign-in, and a protected UI page on the deployed site.
 
-The backend currently stores users, sessions, stations, and other records in
-process memory. Vercel functions can restart and run in separate instances, so
-those records and sessions are **not reliable or durable in a Vercel
-deployment**. Treat this configuration as a deployment/staging integration
-only until the backend store and session validation are moved to persistent
-shared storage. See [backend/README.md](./backend/README.md) for backend routes
-and deployment notes.
+The backend stores account profiles, email lookups, and login sessions in
+Firestore when `FIREBASE_SERVICE_ACCOUNT_JSON` is configured. Vercel API
+deployments require this setting; local development can still use in-memory
+storage. Garage vehicles, rewards (balances, catalog, rules, redemptions, and
+activity), stations, price and availability reports, and alert subscriptions
+and notifications also use Firestore. Trips and refuels remain process-local
+and are not durable across Vercel function restarts or instances. See
+[backend/README.md](./backend/README.md) for setup details and deployment
+limitations.
 
 - `public/` — static UI and its deployed API URL configuration
 - `public/js/api.js` — shared API client, session handling, and UI/API data
