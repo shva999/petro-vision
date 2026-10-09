@@ -319,7 +319,7 @@ app.get("/api/stations/nearby", authenticate, async (req, res) => {
     loadCollection("availabilityReports", availabilityReports)
   ]);
   const origin = { latitude: input.lat, longitude: input.lng };
-  const nearby = [...stations.values()].map((station) => ({
+  const nearby = [...stations.values()].filter((station) => station.verified).map((station) => ({
     ...station,
     distanceKm: distanceKm(origin, station),
     priceReports: [...priceReports.values()].filter((report) => report.stationId === station.id).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)),
@@ -335,7 +335,7 @@ app.get("/api/stations", authenticate, async (_req, res) => {
     loadCollection("priceReports", priceReports),
     loadCollection("availabilityReports", availabilityReports)
   ]);
-  return res.json([...stations.values()].map((station) => ({
+  return res.json([...stations.values()].filter((station) => station.verified).map((station) => ({
     ...station,
     priceReports: [...priceReports.values()].filter((report) => report.stationId === station.id).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)),
     availabilityReports: [...availabilityReports.values()].filter((report) => report.stationId === station.id).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
@@ -344,7 +344,7 @@ app.get("/api/stations", authenticate, async (_req, res) => {
 
 app.get("/api/stations/:id", authenticate, async (req, res) => {
   const station = await loadRecord("stations", stations, routeId(req));
-  if (!station) return res.status(404).json({ error: "Station not found" });
+  if (!station || !station.verified) return res.status(404).json({ error: "Station not found" });
   const [stationPriceReports, stationAvailabilityReports] = await Promise.all([
     loadMatchingRecords("priceReports", priceReports, "stationId", station.id),
     loadMatchingRecords("availabilityReports", availabilityReports, "stationId", station.id)
@@ -374,6 +374,8 @@ app.post("/api/stations/:id/price-reports", authenticate, async (req, res) => {
 });
 
 app.get("/api/stations/:id/price-reports", authenticate, async (req, res) => {
+  const station = await loadRecord("stations", stations, routeId(req));
+  if (!station || !station.verified) return res.status(404).json({ error: "Station not found" });
   const reports = await loadMatchingRecords("priceReports", priceReports, "stationId", routeId(req));
   return res.json(reports.sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)));
 });
@@ -582,6 +584,23 @@ app.get("/api/admin/dashboard", authenticate, requireAdmin, async (_req, res) =>
   });
 });
 
+app.get("/api/admin/stations", authenticate, requireAdmin, async (_req, res) => {
+  await Promise.all([
+    loadCollection("stations", stations, true),
+    loadCollection("priceReports", priceReports),
+    loadCollection("availabilityReports", availabilityReports)
+  ]);
+  return res.json([...stations.values()].map((station) => ({
+    ...station,
+    priceReports: [...priceReports.values()]
+      .filter((report) => report.stationId === station.id)
+      .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)),
+    availabilityReports: [...availabilityReports.values()]
+      .filter((report) => report.stationId === station.id)
+      .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
+  })));
+});
+
 app.get("/api/admin/reports", authenticate, requireAdmin, async (req, res) => {
   await getAllUsers();
   await Promise.all([
@@ -646,9 +665,15 @@ app.put("/api/admin/stations/:id", authenticate, requireAdmin, async (req, res) 
   }).refine((data) => Object.keys(data).length > 0), req.body);
   const station = await loadRecord("stations", stations, routeId(req));
   if (!station) return res.status(404).json({ error: "Station not found" });
+  const wasVerified = station.verified;
   Object.assign(station, input);
   await saveRecord("stations", stations, station.id, station);
-  await recordAudit(req.auth!.userId, "station.updated", "station", station.id, input);
+  const action = input.verified === true && !wasVerified
+    ? "station.approved"
+    : input.verified === false && wasVerified
+      ? "station.unapproved"
+      : "station.updated";
+  await recordAudit(req.auth!.userId, action, "station", station.id, input);
   return res.json(station);
 });
 
