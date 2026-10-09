@@ -21,13 +21,13 @@ served UI on localhost:5500 or localhost:5501, the development CORS allowlist
 permits requests to this API; set `FRONTEND_ORIGIN` to a comma-separated list
 of trusted UI origins when deploying elsewhere.
 
-The local mode uses in-memory storage and a development JWT secret, so it starts without cloud credentials. Data resets when the process restarts. Set a private `JWT_SECRET` before exposing the service beyond local development. Set `ADMIN_EMAIL` to the email address that should receive the admin role when it registers; keep this value controlled by the deployment operator.
+Without Firebase credentials, local mode uses in-memory storage and a development JWT secret, so it starts without cloud credentials. Data resets when the process restarts. When `FIREBASE_SERVICE_ACCOUNT_JSON` is configured, account profiles, email lookups, login sessions, vehicles, stations, price and availability reports, notification subscriptions and notifications, reward balances, reward catalog items, reward rules, redemptions, and audit/activity records are stored in Firestore. Trips and refuels still use in-memory storage. Set a private `JWT_SECRET` before exposing the service beyond local development. Set `ADMIN_EMAIL` to the email address that should receive the admin role when it registers; keep this value controlled by the deployment operator.
 
 The API listens on `http://localhost:3000` by default. Check `GET /health` for readiness. Use `POST /api/auth/register` to create a driver and receive bearer tokens. Send the access token as `Authorization: Bearer <token>` for protected routes.
 
 ## Configuration
 
-`GOOGLE_MAPS_API_KEY` enables Google Routes distance calculations for trip estimates. Without it, the API returns an approximate straight-line distance. Setting `FIREBASE_SERVICE_ACCOUNT_JSON` initializes Firebase Admin Auth, Firestore, Storage, and Messaging clients. Current route handlers use in-memory data and local JWT authentication; Firestore persistence, Firebase Auth delegation, and media upload routes are not wired yet. Price reports create in-process alert notifications; when Firebase Messaging is configured and a subscription includes an FCM token, the API also attempts push delivery. Data is not durable, and this version is not production-ready.
+`GOOGLE_MAPS_API_KEY` enables Google Routes distance calculations for trip estimates. Without it, the API returns an approximate straight-line distance. Setting `FIREBASE_SERVICE_ACCOUNT_JSON` initializes Firebase Admin clients and enables Firestore persistence for accounts, sessions, vehicles, stations, price and availability reports, notification subscriptions and notifications, reward balances, catalog items, rules, redemptions, and audit/activity records. The default demo station is inserted into Firestore only when its station collection is empty. Authentication continues to use the API's local JWT tokens; Firebase Auth delegation and media upload routes are not wired. Trips and refuels remain in-process and are not durable.
 
 Price and availability contributions earn points using the configured reward rules. Admins manage reward items and point rules through the admin routes. To make the first admin, set `ADMIN_EMAIL` before registering that email address.
 
@@ -48,23 +48,29 @@ After creating the API deployment:
    (for example, `https://your-ui-project.vercel.app`; do not include a path
    or trailing slash). Add multiple trusted origins as comma-separated values
    if needed.
-3. Set `ADMIN_EMAIL` before registering the email address intended to receive
-   admin privileges. Configure optional `GOOGLE_MAPS_API_KEY` and
-   `FIREBASE_SERVICE_ACCOUNT_JSON` only when required.
-4. In `../public/js/config.js`, set `window.PETROVISION_API_URL` to the
+3. Create/enable a Firestore database in the Firebase project associated with
+   a service account. Add `FIREBASE_SERVICE_ACCOUNT_JSON` to the API project's
+   Vercel Environment Variables using the service-account JSON as a single-line
+   JSON value. Keep it private; the service account needs permission to read
+   and write Firestore data. This setting is required for the API to start on
+   Vercel. It persists accounts, login sessions, garage vehicles, reward
+   balances, catalog items, reward rules, redemptions, and reward activity
+   across Vercel instances, as well as stations, reports, and alert subscriptions/notifications.
+4. Set `ADMIN_EMAIL` before registering the email address intended to receive
+   admin privileges. Configure optional `GOOGLE_MAPS_API_KEY` only when
+   required.
+5. In `../public/js/config.js`, set `window.PETROVISION_API_URL` to the
    deployed API origin plus `/api`, such as
    `https://your-api-project.vercel.app/api`, then deploy/update the UI project
    with **Root Directory** set to `public`.
-5. Check `/api/health` on the API deployment and test login plus protected
+6. Check `/api/health` on the API deployment and test login plus protected
    routes from the deployed UI.
 
-Vercel functions are stateless and may run in different instances. This API
-currently stores users, access-session IDs, and feature data in process-local
-Maps. As a result, production accounts and data will not reliably persist and
-authenticated requests may fail when routed to another instance. Do not use
-this deployment for real users until persistence and session validation are
-moved to a shared database/session store. The Vercel setup adapts project
-routing but does not solve those data-storage requirements.
+Vercel functions are stateless and may run in different instances. The API
+refuses to start on Vercel if Firestore credentials are missing. Station,
+report, and alert data use Firestore; trip and refuel records remain in
+process-local Maps and are not durable. Redemption records are stored in Firestore, though
+no redemption-history endpoint is currently exposed.
 
 ## API routes
 
