@@ -9,6 +9,7 @@ import { z, ZodError } from "zod";
 import type { Role, User } from "./domain.js";
 import { firebase } from "./firebase.js";
 import { createSession, createUser, findUserByEmail, getAllUsers, getUser, hasSession, revokeSession, saveUser } from "./auth-store.js";
+import { deleteRecord, loadCollection, loadOwnedRecords, loadRecord, saveRecord } from "./feature-store.js";
 import { auditLogs, availabilityReports, notifications, notificationSubscriptions, priceReports, refuels, redemptions, rewardAccounts, rewardRules, rewards, stations, trips, users, vehicles } from "./store.js";
 
 const app = express();
@@ -99,28 +100,30 @@ function routeId(req: Request): string {
   return Array.isArray(id) ? id[0] ?? "" : id ?? "";
 }
 
-function rewardAccount(userId: string) {
-  let account = rewardAccounts.get(userId);
+async function rewardAccount(userId: string) {
+  let account = await loadRecord("rewardAccounts", rewardAccounts, userId);
   if (!account) {
     account = { userId, points: 0, contributions: 0, contributionStats: {}, badges: [] };
-    rewardAccounts.set(userId, account);
+    await saveRecord("rewardAccounts", rewardAccounts, userId, account);
   }
   return account;
 }
 
-function awardContribution(userId: string, contributionType: string) {
-  const account = rewardAccount(userId);
-  const points = rewardRules.get(contributionType)?.points ?? 0;
+async function awardContribution(userId: string, contributionType: string) {
+  const account = await rewardAccount(userId);
+  const rule = await loadRecord("rewardRules", rewardRules, contributionType);
+  const points = rule?.points ?? 0;
   account.points += points;
   account.contributions += 1;
   account.contributionStats[contributionType] = (account.contributionStats[contributionType] ?? 0) + 1;
   if (account.contributions >= 1 && !account.badges.includes("First Contributor")) account.badges.push("First Contributor");
   if (account.contributions >= 10 && !account.badges.includes("Community Champion")) account.badges.push("Community Champion");
-  recordAudit(userId, "contribution.created", "contribution", contributionType, { contributionType, pointsAwarded: points });
+  await saveRecord("rewardAccounts", rewardAccounts, userId, account);
+  await recordAudit(userId, "contribution.created", "contribution", contributionType, { contributionType, pointsAwarded: points });
   return points;
 }
 
-function recordAudit(actorUserId: string, action: string, entity: string, entityId: string, details: Record<string, unknown> = {}) {
+async function recordAudit(actorUserId: string, action: string, entity: string, entityId: string, details: Record<string, unknown> = {}) {
   const actor = users.get(actorUserId);
   const log = {
     id: randomUUID(),
@@ -132,7 +135,7 @@ function recordAudit(actorUserId: string, action: string, entity: string, entity
     createdAt: new Date().toISOString(),
     details
   };
-  auditLogs.set(log.id, log);
+  await saveRecord("auditLogs", auditLogs, log.id, log);
   return log;
 }
 
@@ -208,8 +211,8 @@ app.post("/api/auth/register", async (req, res) => {
   const isBootstrapAdmin = process.env.ADMIN_EMAIL?.toLowerCase() === email;
   const user: User = { id: randomUUID(), email, displayName: input.displayName, role: isBootstrapAdmin ? "admin" : "user", passwordHash: await bcrypt.hash(input.password, 10), suspended: false, createdAt: new Date().toISOString() };
   if (!(await createUser(user))) return res.status(409).json({ error: "Email already registered" });
-  rewardAccount(user.id);
-  awardContribution(user.id, "signup");
+  await rewardAccount(user.id);
+  await awardContribution(user.id, "signup");
   return res.status(201).json({ user: publicUser(user), ...await issueTokens(user) });
 });
 
@@ -257,10 +260,14 @@ app.put("/api/users/me", authenticate, async (req, res) => {
   return res.json(publicUser(user));
 });
 
-app.get("/api/admin/users", authenticate, requireAdmin, async (_req, res) => res.json((await getAllUsers()).map((user) => ({
-  ...publicUser(user),
-  points: rewardAccount(user.id).points
-}))));
+app.get("/api/admin/users", authenticate, requireAdmin, async (_req, res) => {
+  const allUsers = await getAllUsers();
+  const result = await Promise.all(allUsers.map(async (user) => ({
+    ...publicUser(user),
+    points: (await rewardAccount(user.id)).points
+  })));
+  return res.json(result);
+});
 
 app.put("/api/admin/users/:id/role", authenticate, requireAdmin, async (req, res) => {
   const input = validate(z.object({ role: z.enum(["user", "admin"]), suspended: z.boolean().optional() }), req.body);
@@ -270,32 +277,35 @@ app.put("/api/admin/users/:id/role", authenticate, requireAdmin, async (req, res
   user.role = input.role;
   if (input.suspended !== undefined) user.suspended = input.suspended;
   await saveUser(user);
-  recordAudit(req.auth!.userId, "user.access-updated", "user", user.id, { previousRole, role: user.role, suspended: user.suspended });
+  await recordAudit(req.auth!.userId, "user.access-updated", "user", user.id, { previousRole, role: user.role, suspended: user.suspended });
   return res.json(publicUser(user));
 });
 
-app.get("/api/vehicles", authenticate, (req, res) => res.json([...vehicles.values()].filter((vehicle) => vehicle.ownerId === req.auth!.userId)));
+app.get("/api/vehicles", authenticate, async (req, res) => {
+  return res.json(await loadOwnedRecords("vehicles", vehicles, req.auth!.userId));
+});
 
-app.post("/api/vehicles", authenticate, (req, res) => {
+app.post("/api/vehicles", authenticate, async (req, res) => {
   const input = validate(z.object({ make: z.string().min(1), model: z.string().min(1), year: z.number().int().min(1886).max(new Date().getFullYear() + 1), fuelType: z.string().min(1), fuelEfficiency: z.number().positive() }), req.body);
   const vehicle = { id: randomUUID(), ownerId: req.auth!.userId, ...input };
-  vehicles.set(vehicle.id, vehicle);
-  awardContribution(req.auth!.userId, "new-vehicle");
+  await saveRecord("vehicles", vehicles, vehicle.id, vehicle);
+  await awardContribution(req.auth!.userId, "new-vehicle");
   return res.status(201).json(vehicle);
 });
 
-app.put("/api/vehicles/:id", authenticate, (req, res) => {
+app.put("/api/vehicles/:id", authenticate, async (req, res) => {
   const input = validate(z.object({ make: z.string().min(1).optional(), model: z.string().min(1).optional(), year: z.number().int().min(1886).optional(), fuelType: z.string().min(1).optional(), fuelEfficiency: z.number().positive().optional() }).refine((data) => Object.keys(data).length > 0), req.body);
-  const vehicle = vehicles.get(routeId(req));
+  const vehicle = await loadRecord("vehicles", vehicles, routeId(req));
   if (!vehicle || vehicle.ownerId !== req.auth!.userId) return res.status(404).json({ error: "Vehicle not found" });
   Object.assign(vehicle, input);
+  await saveRecord("vehicles", vehicles, vehicle.id, vehicle);
   return res.json(vehicle);
 });
 
-app.delete("/api/vehicles/:id", authenticate, (req, res) => {
-  const vehicle = vehicles.get(routeId(req));
+app.delete("/api/vehicles/:id", authenticate, async (req, res) => {
+  const vehicle = await loadRecord("vehicles", vehicles, routeId(req));
   if (!vehicle || vehicle.ownerId !== req.auth!.userId) return res.status(404).json({ error: "Vehicle not found" });
-  vehicles.delete(vehicle.id);
+  await deleteRecord("vehicles", vehicles, vehicle.id);
   return res.status(204).end();
 });
 
@@ -321,22 +331,22 @@ app.get("/api/stations/:id", authenticate, (req, res) => {
   return res.json({ ...station, priceReports: [...priceReports.values()].filter((report) => report.stationId === station.id), availability: [...availabilityReports.values()].filter((report) => report.stationId === station.id) });
 });
 
-app.post("/api/stations", authenticate, (req, res) => {
+app.post("/api/stations", authenticate, async (req, res) => {
   const input = validate(z.object({ name: z.string().min(1), address: z.string().min(1), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }), req.body);
   const station = { id: randomUUID(), ...input, verified: false, createdBy: req.auth!.userId };
   stations.set(station.id, station);
-  const pointsAwarded = awardContribution(req.auth!.userId, "station-suggestion");
-  recordAudit(req.auth!.userId, "station.suggested", "station", station.id, { stationId: station.id, pointsAwarded });
+  const pointsAwarded = await awardContribution(req.auth!.userId, "station-suggestion");
+  await recordAudit(req.auth!.userId, "station.suggested", "station", station.id, { stationId: station.id, pointsAwarded });
   return res.status(201).json(station);
 });
 
-app.post("/api/stations/:id/price-reports", authenticate, (req, res) => {
+app.post("/api/stations/:id/price-reports", authenticate, async (req, res) => {
   if (!stations.has(routeId(req))) return res.status(404).json({ error: "Station not found" });
   const input = validate(z.object({ fuelType: z.string().min(1), price: z.number().positive() }), req.body);
   const report = { id: randomUUID(), stationId: routeId(req), userId: req.auth!.userId, ...input, reportedAt: new Date().toISOString(), verified: false, status: "pending" as const };
   priceReports.set(report.id, report);
-  const pointsAwarded = awardContribution(req.auth!.userId, "price-report");
-  recordAudit(req.auth!.userId, "price-report.submitted", "price-report", report.id, { stationId: report.stationId, status: report.status, pointsAwarded });
+  const pointsAwarded = await awardContribution(req.auth!.userId, "price-report");
+  await recordAudit(req.auth!.userId, "price-report.submitted", "price-report", report.id, { stationId: report.stationId, status: report.status, pointsAwarded });
   sendPriceAlerts(report);
   return res.status(201).json(report);
 });
@@ -345,17 +355,17 @@ app.get("/api/stations/:id/price-reports", authenticate, (req, res) => {
   return res.json([...priceReports.values()].filter((report) => report.stationId === routeId(req)).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)));
 });
 
-app.put("/api/price-reports/:id/verify", authenticate, (req, res) => {
+app.put("/api/price-reports/:id/verify", authenticate, async (req, res) => {
   const report = priceReports.get(routeId(req));
   if (!report) return res.status(404).json({ error: "Price report not found" });
   if (req.auth!.role !== "admin" && report.userId === req.auth!.userId) return res.status(403).json({ error: "Users cannot verify their own reports" });
   report.verified = validate(z.object({ verified: z.boolean() }), req.body).verified;
   report.status = report.verified ? "approved" : "rejected";
-  recordAudit(req.auth!.userId, report.verified ? "price-report.approved" : "price-report.rejected", "price-report", report.id, { stationId: report.stationId, status: report.status });
+  await recordAudit(req.auth!.userId, report.verified ? "price-report.approved" : "price-report.rejected", "price-report", report.id, { stationId: report.stationId, status: report.status });
   return res.json(report);
 });
 
-app.post("/api/stations/:id/availability", authenticate, (req, res) => {
+app.post("/api/stations/:id/availability", authenticate, async (req, res) => {
   if (!stations.has(routeId(req))) return res.status(404).json({ error: "Station not found" });
   const input = validate(z.object({
     fuelType: z.string().min(1),
@@ -372,8 +382,8 @@ app.post("/api/stations/:id/availability", authenticate, (req, res) => {
     reportedAt: new Date().toISOString()
   };
   availabilityReports.set(report.id, report);
-  const pointsAwarded = awardContribution(req.auth!.userId, "availability-report");
-  recordAudit(req.auth!.userId, "availability-report.submitted", "availability-report", report.id, { stationId: report.stationId, pointsAwarded });
+  const pointsAwarded = await awardContribution(req.auth!.userId, "availability-report");
+  await recordAudit(req.auth!.userId, "availability-report.submitted", "availability-report", report.id, { stationId: report.stationId, pointsAwarded });
   return res.status(201).json(report);
 });
 
@@ -381,7 +391,7 @@ const estimateSchema = z.object({ origin: pointSchema, destination: pointSchema,
 
 async function estimate(req: Request, res: Response) {
   const input = validate(estimateSchema, req.body);
-  const vehicle = vehicles.get(input.vehicleId);
+  const vehicle = await loadRecord("vehicles", vehicles, input.vehicleId);
   if (!vehicle || vehicle.ownerId !== req.auth!.userId) return res.status(404).json({ error: "Vehicle not found" });
   const distance = await routeDistance(input.origin, input.destination);
   const fuelType = input.fuelType ?? vehicle.fuelType;
@@ -395,7 +405,7 @@ app.post("/api/trips/estimate", authenticate, (req, res, next) => { void estimat
 
 app.post("/api/trips", authenticate, async (req, res) => {
   const input = validate(estimateSchema, req.body);
-  const vehicle = vehicles.get(input.vehicleId);
+  const vehicle = await loadRecord("vehicles", vehicles, input.vehicleId);
   if (!vehicle || vehicle.ownerId !== req.auth!.userId) return res.status(404).json({ error: "Vehicle not found" });
   const distance = await routeDistance(input.origin, input.destination);
   const fuelType = input.fuelType ?? vehicle.fuelType;
@@ -403,7 +413,7 @@ app.post("/api/trips", authenticate, async (req, res) => {
   const avgPrice = fuelPrices.length ? fuelPrices.reduce((sum, price) => sum + price, 0) / fuelPrices.length : 60;
   const trip = { id: randomUUID(), userId: req.auth!.userId, vehicleId: vehicle.id, origin: input.origin, destination: input.destination, distanceKm: Math.round(distance * 100) / 100, estimatedFuelCost: Math.round(distance / vehicle.fuelEfficiency * avgPrice * 100) / 100, createdAt: new Date().toISOString() };
   trips.set(trip.id, trip);
-  awardContribution(req.auth!.userId, "trip-log");
+  await awardContribution(req.auth!.userId, "trip-log");
   return res.status(201).json(trip);
 });
 
@@ -415,12 +425,12 @@ app.get("/api/trips/:id", authenticate, (req, res) => {
   return res.json(trip);
 });
 
-app.post("/api/refuels", authenticate, (req, res) => {
+app.post("/api/refuels", authenticate, async (req, res) => {
   const input = validate(z.object({ stationId: z.string().optional(), amountLitres: z.number().positive(), totalCost: z.number().positive(), fuelType: z.string().min(1), occurredAt: z.iso.datetime().optional() }), req.body);
   if (input.stationId && !stations.has(input.stationId)) return res.status(404).json({ error: "Station not found" });
   const refuel = { id: randomUUID(), userId: req.auth!.userId, ...input, occurredAt: input.occurredAt ?? new Date().toISOString() };
   refuels.set(refuel.id, refuel);
-  awardContribution(req.auth!.userId, "refuel-log");
+  await awardContribution(req.auth!.userId, "refuel-log");
   return res.status(201).json(refuel);
 });
 
@@ -431,11 +441,12 @@ app.get("/api/refuels", authenticate, (req, res) => {
   return res.json({ records: ownRefuels.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), monthlySpend: Math.round(monthlySpend * 100) / 100, currency: "USD" });
 });
 
-app.get("/api/rewards/me", authenticate, (req, res) => res.json(rewardAccount(req.auth!.userId)));
-app.get("/api/rewards/rules", authenticate, (_req, res) => res.json([...rewardRules.values()]));
+app.get("/api/rewards/me", authenticate, async (req, res) => res.json(await rewardAccount(req.auth!.userId)));
+app.get("/api/rewards/rules", authenticate, async (_req, res) => res.json(await loadCollection("rewardRules", rewardRules, true)));
 
 app.get("/api/rewards/leaderboard", authenticate, async (_req, res) => {
   await getAllUsers();
+  await loadCollection("rewardAccounts", rewardAccounts);
   const leaderboard = [...rewardAccounts.values()]
     .map((account) => {
       const user = users.get(account.userId);
@@ -446,7 +457,8 @@ app.get("/api/rewards/leaderboard", authenticate, async (_req, res) => {
   return res.json(leaderboard);
 });
 
-app.get("/api/rewards/activity", authenticate, (req, res) => {
+app.get("/api/rewards/activity", authenticate, async (req, res) => {
+  await loadCollection("auditLogs", auditLogs);
   const activity = [...auditLogs.values()]
     .filter((log) => log.actorUserId === req.auth!.userId && log.action === "contribution.created" && Number(log.details.pointsAwarded) > 0)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -454,19 +466,21 @@ app.get("/api/rewards/activity", authenticate, (req, res) => {
   return res.json(activity);
 });
 
-app.get("/api/rewards/catalog", authenticate, (_req, res) => {
-  return res.json([...rewards.values()].filter((reward) => reward.active));
+app.get("/api/rewards/catalog", authenticate, async (_req, res) => {
+  const catalog = await loadCollection("rewards", rewards, true);
+  return res.json(catalog.filter((reward) => reward.active));
 });
 
-app.post("/api/rewards/redeem", authenticate, (req, res) => {
+app.post("/api/rewards/redeem", authenticate, async (req, res) => {
   const input = validate(z.object({ rewardId: z.string().min(1) }), req.body);
-  const reward = rewards.get(input.rewardId);
+  const reward = await loadRecord("rewards", rewards, input.rewardId);
   if (!reward || !reward.active) return res.status(404).json({ error: "Reward not found" });
-  const account = rewardAccount(req.auth!.userId);
+  const account = await rewardAccount(req.auth!.userId);
   if (account.points < reward.pointsCost) return res.status(400).json({ error: "Not enough points", pointsRequired: reward.pointsCost, pointsAvailable: account.points });
   account.points -= reward.pointsCost;
   const redemption = { id: randomUUID(), userId: req.auth!.userId, rewardId: reward.id, pointsSpent: reward.pointsCost, redeemedAt: new Date().toISOString() };
-  redemptions.set(redemption.id, redemption);
+  await saveRecord("rewardAccounts", rewardAccounts, account.userId, account);
+  await saveRecord("redemptions", redemptions, redemption.id, redemption);
   return res.status(201).json({ redemption, reward, pointsRemaining: account.points });
 });
 
@@ -476,7 +490,7 @@ app.get("/api/notifications", authenticate, (req, res) => {
   return res.json({ notifications: ownNotifications, unreadCount: ownNotifications.filter((notification) => !notification.read).length });
 });
 
-app.post("/api/notifications/subscribe", authenticate, (req, res) => {
+app.post("/api/notifications/subscribe", authenticate, async (req, res) => {
   const input = validate(z.object({
     stationId: z.string().min(1),
     fuelType: z.string().min(1),
@@ -493,7 +507,7 @@ app.post("/api/notifications/subscribe", authenticate, (req, res) => {
   );
   const subscription = { id: existing?.id ?? randomUUID(), userId: req.auth!.userId, ...input };
   notificationSubscriptions.set(subscription.id, subscription);
-  if (!existing) awardContribution(req.auth!.userId, "new-alert");
+  if (!existing) await awardContribution(req.auth!.userId, "new-alert");
   const { fcmToken: _fcmToken, ...safeSubscription } = subscription;
   return res.status(existing ? 200 : 201).json(safeSubscription);
 });
@@ -513,6 +527,7 @@ app.delete("/api/notifications/subscriptions/:id", authenticate, (req, res) => {
 
 app.get("/api/admin/dashboard", authenticate, requireAdmin, async (_req, res) => {
   await getAllUsers();
+  await loadCollection("rewardAccounts", rewardAccounts);
   const topContributors = [...rewardAccounts.values()]
     .filter((account) => account.contributions > 0)
     .sort((a, b) => b.contributions - a.contributions)
@@ -538,17 +553,18 @@ app.get("/api/admin/reports", authenticate, requireAdmin, async (req, res) => {
   return res.json(result);
 });
 
-app.put("/api/admin/reports/:id/status", authenticate, requireAdmin, (req, res) => {
+app.put("/api/admin/reports/:id/status", authenticate, requireAdmin, async (req, res) => {
   const input = validate(z.object({ status: z.enum(["approved", "rejected"]) }), req.body);
   const report = priceReports.get(routeId(req));
   if (!report) return res.status(404).json({ error: "Price report not found" });
   report.status = input.status;
   report.verified = input.status === "approved";
-  recordAudit(req.auth!.userId, `price-report.${input.status}`, "price-report", report.id, { stationId: report.stationId, status: report.status });
+  await recordAudit(req.auth!.userId, `price-report.${input.status}`, "price-report", report.id, { stationId: report.stationId, status: report.status });
   return res.json(report);
 });
 
-app.get("/api/admin/station-logs", authenticate, requireAdmin, (req, res) => {
+app.get("/api/admin/station-logs", authenticate, requireAdmin, async (req, res) => {
+  await loadCollection("auditLogs", auditLogs);
   const filters = validate(z.object({ stationId: z.string().optional() }), req.query);
   const logs = [...auditLogs.values()]
     .filter((log) => !filters.stationId || log.entityId === filters.stationId || log.details.stationId === filters.stationId)
@@ -557,7 +573,8 @@ app.get("/api/admin/station-logs", authenticate, requireAdmin, (req, res) => {
   return res.json(logs);
 });
 
-app.get("/api/admin/audit-logs", authenticate, requireAdmin, (req, res) => {
+app.get("/api/admin/audit-logs", authenticate, requireAdmin, async (req, res) => {
+  await loadCollection("auditLogs", auditLogs);
   const filters = validate(z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }), req.query);
   const logs = [...auditLogs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, filters.limit);
   return res.json(logs);
@@ -567,13 +584,14 @@ app.post("/api/admin/reward-adjustments", authenticate, requireAdmin, async (req
   const input = validate(z.object({ userId: z.string().min(1), amount: z.number().int().refine((amount) => amount !== 0), reason: z.string().min(1).max(500) }), req.body);
   const user = await getUser(input.userId);
   if (!user || user.role === "admin") return res.status(404).json({ error: "User not found" });
-  const account = rewardAccount(user.id);
+  const account = await rewardAccount(user.id);
   account.points = Math.max(0, account.points + input.amount);
-  recordAudit(req.auth!.userId, "reward.points-adjusted", "user", user.id, { amount: input.amount, reason: input.reason });
+  await saveRecord("rewardAccounts", rewardAccounts, user.id, account);
+  await recordAudit(req.auth!.userId, "reward.points-adjusted", "user", user.id, { amount: input.amount, reason: input.reason });
   return res.json({ user: publicUser(user), points: account.points });
 });
 
-app.put("/api/admin/stations/:id", authenticate, requireAdmin, (req, res) => {
+app.put("/api/admin/stations/:id", authenticate, requireAdmin, async (req, res) => {
   const input = validate(z.object({
     name: z.string().min(1).optional(),
     address: z.string().min(1).optional(),
@@ -584,72 +602,74 @@ app.put("/api/admin/stations/:id", authenticate, requireAdmin, (req, res) => {
   const station = stations.get(routeId(req));
   if (!station) return res.status(404).json({ error: "Station not found" });
   Object.assign(station, input);
-  recordAudit(req.auth!.userId, "station.updated", "station", station.id, input);
+  await recordAudit(req.auth!.userId, "station.updated", "station", station.id, input);
   return res.json(station);
 });
 
-app.delete("/api/admin/stations/:id", authenticate, requireAdmin, (req, res) => {
+app.delete("/api/admin/stations/:id", authenticate, requireAdmin, async (req, res) => {
   const station = stations.get(routeId(req));
   if (!station) return res.status(404).json({ error: "Station not found" });
   stations.delete(station.id);
   for (const [id, report] of priceReports) if (report.stationId === station.id) priceReports.delete(id);
   for (const [id, report] of availabilityReports) if (report.stationId === station.id) availabilityReports.delete(id);
   for (const [id, subscription] of notificationSubscriptions) if (subscription.stationId === station.id) notificationSubscriptions.delete(id);
-  recordAudit(req.auth!.userId, "station.deleted", "station", station.id, { name: station.name });
+  await recordAudit(req.auth!.userId, "station.deleted", "station", station.id, { name: station.name });
   return res.status(204).end();
 });
 
-app.get("/api/admin/rewards", authenticate, requireAdmin, (_req, res) => res.json([...rewards.values()]));
+app.get("/api/admin/rewards", authenticate, requireAdmin, async (_req, res) => res.json(await loadCollection("rewards", rewards, true)));
 
-app.post("/api/admin/rewards", authenticate, requireAdmin, (req, res) => {
+app.post("/api/admin/rewards", authenticate, requireAdmin, async (req, res) => {
   const input = validate(z.object({ name: z.string().min(1), description: z.string().min(1), pointsCost: z.number().int().positive(), active: z.boolean().default(true) }), req.body);
   const reward = { id: randomUUID(), ...input };
-  rewards.set(reward.id, reward);
-  recordAudit(req.auth!.userId, "reward.created", "reward", reward.id, { pointsCost: reward.pointsCost });
+  await saveRecord("rewards", rewards, reward.id, reward);
+  await recordAudit(req.auth!.userId, "reward.created", "reward", reward.id, { pointsCost: reward.pointsCost });
   return res.status(201).json(reward);
 });
 
-app.put("/api/admin/rewards/:id", authenticate, requireAdmin, (req, res) => {
+app.put("/api/admin/rewards/:id", authenticate, requireAdmin, async (req, res) => {
   const input = validate(z.object({ name: z.string().min(1).optional(), description: z.string().min(1).optional(), pointsCost: z.number().int().positive().optional(), active: z.boolean().optional() }).refine((data) => Object.keys(data).length > 0), req.body);
-  const reward = rewards.get(routeId(req));
+  const reward = await loadRecord("rewards", rewards, routeId(req));
   if (!reward) return res.status(404).json({ error: "Reward not found" });
   Object.assign(reward, input);
-  recordAudit(req.auth!.userId, "reward.updated", "reward", reward.id, input);
+  await saveRecord("rewards", rewards, reward.id, reward);
+  await recordAudit(req.auth!.userId, "reward.updated", "reward", reward.id, input);
   return res.json(reward);
 });
 
-app.delete("/api/admin/rewards/:id", authenticate, requireAdmin, (req, res) => {
-  const reward = rewards.get(routeId(req));
+app.delete("/api/admin/rewards/:id", authenticate, requireAdmin, async (req, res) => {
+  const reward = await loadRecord("rewards", rewards, routeId(req));
   if (!reward) return res.status(404).json({ error: "Reward not found" });
-  rewards.delete(reward.id);
-  recordAudit(req.auth!.userId, "reward.deleted", "reward", reward.id);
+  await deleteRecord("rewards", rewards, reward.id);
+  await recordAudit(req.auth!.userId, "reward.deleted", "reward", reward.id);
   return res.status(204).end();
 });
 
-app.get("/api/admin/rewards/rules", authenticate, requireAdmin, (_req, res) => res.json([...rewardRules.values()]));
+app.get("/api/admin/rewards/rules", authenticate, requireAdmin, async (_req, res) => res.json(await loadCollection("rewardRules", rewardRules, true)));
 
-app.post("/api/admin/rewards/rules", authenticate, requireAdmin, (req, res) => {
+app.post("/api/admin/rewards/rules", authenticate, requireAdmin, async (req, res) => {
   const input = validate(z.object({ id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/), label: z.string().min(1), points: z.number().int().nonnegative() }), req.body);
-  if (rewardRules.has(input.id)) return res.status(409).json({ error: "Reward rule already exists" });
-  rewardRules.set(input.id, input);
-  recordAudit(req.auth!.userId, "reward-rule.created", "reward-rule", input.id, { points: input.points });
+  if (await loadRecord("rewardRules", rewardRules, input.id)) return res.status(409).json({ error: "Reward rule already exists" });
+  await saveRecord("rewardRules", rewardRules, input.id, input);
+  await recordAudit(req.auth!.userId, "reward-rule.created", "reward-rule", input.id, { points: input.points });
   return res.status(201).json(input);
 });
 
-app.put("/api/admin/rewards/rules/:id", authenticate, requireAdmin, (req, res) => {
+app.put("/api/admin/rewards/rules/:id", authenticate, requireAdmin, async (req, res) => {
   const input = validate(z.object({ label: z.string().min(1).optional(), points: z.number().int().nonnegative().optional() }).refine((data) => Object.keys(data).length > 0), req.body);
-  const rule = rewardRules.get(routeId(req));
+  const rule = await loadRecord("rewardRules", rewardRules, routeId(req));
   if (!rule) return res.status(404).json({ error: "Reward rule not found" });
   Object.assign(rule, input);
-  recordAudit(req.auth!.userId, "reward-rule.updated", "reward-rule", rule.id, input);
+  await saveRecord("rewardRules", rewardRules, rule.id, rule);
+  await recordAudit(req.auth!.userId, "reward-rule.updated", "reward-rule", rule.id, input);
   return res.json(rule);
 });
 
-app.delete("/api/admin/rewards/rules/:id", authenticate, requireAdmin, (req, res) => {
-  const rule = rewardRules.get(routeId(req));
+app.delete("/api/admin/rewards/rules/:id", authenticate, requireAdmin, async (req, res) => {
+  const rule = await loadRecord("rewardRules", rewardRules, routeId(req));
   if (!rule) return res.status(404).json({ error: "Reward rule not found" });
-  rewardRules.delete(rule.id);
-  recordAudit(req.auth!.userId, "reward-rule.deleted", "reward-rule", rule.id);
+  await deleteRecord("rewardRules", rewardRules, rule.id);
+  await recordAudit(req.auth!.userId, "reward-rule.deleted", "reward-rule", rule.id);
   return res.status(204).end();
 });
 
