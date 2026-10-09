@@ -39,7 +39,9 @@ const stationsBox = document.getElementById("profile-stations");
       stationsBox.innerHTML = `<div class="banner banner-danger">${escapeHtml(stationsResult.reason.message || "Could not load station reports.")}</div>`;
       return;
     }
-    const mine = stationsResult.value.filter(station => station.submittedBy === user.id && station.fuelType);
+    const mine = stationsResult.value.filter(station =>
+      station.reportId && station.submittedBy === user.id && station.fuelType
+    );
     stationsBox.innerHTML = mine.length
       ? `<table><thead><tr><th>Station</th><th>Fuel</th><th>Price</th><th>Status</th></tr></thead>
         <tbody>${mine.map(station => `<tr><td>${escapeHtml(station.name)}</td><td>${escapeHtml(station.fuelType)}</td>
