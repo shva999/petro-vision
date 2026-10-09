@@ -111,6 +111,7 @@ async function rewardAccount(userId: string) {
 
 async function awardContribution(userId: string, contributionType: string) {
   const account = await rewardAccount(userId);
+  await loadCollection("rewardRules", rewardRules, true);
   const rule = await loadRecord("rewardRules", rewardRules, contributionType);
   const points = rule?.points ?? 0;
   account.points += points;
@@ -531,8 +532,11 @@ app.get("/api/admin/dashboard", authenticate, requireAdmin, async (_req, res) =>
   const topContributors = [...rewardAccounts.values()]
     .filter((account) => account.contributions > 0)
     .sort((a, b) => b.contributions - a.contributions)
-    .slice(0, 10)
-    .map((account) => ({ user: publicUser(users.get(account.userId)!), contributions: account.contributions, points: account.points }));
+    .flatMap((account) => {
+      const user = users.get(account.userId);
+      return user ? [{ user: publicUser(user), contributions: account.contributions, points: account.points }] : [];
+    })
+    .slice(0, 10);
   const reports = [...priceReports.values()];
   return res.json({
     activeStations: [...stations.values()].filter((station) => station.verified).length,
@@ -678,6 +682,7 @@ app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
 const errorHandler: ErrorRequestHandler = (error: unknown, _req, res, _next) => {
   if (error instanceof ZodError) return res.status(400).json({ error: "Validation failed", details: error.issues });
   const message = error instanceof Error ? error.message : "Internal server error";
+  console.error("PetroVision API request failed:", error);
   const status = message.startsWith("No route found") ? 422 : 500;
   return res.status(status).json({ error: status === 500 ? "Internal server error" : message });
 };
