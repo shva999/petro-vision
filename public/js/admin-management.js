@@ -37,6 +37,7 @@ async function renderStations() {
     return `<tr><td><strong>${escapeHtml(station.name)}</strong><br><span class="hint">${escapeHtml(station.id)}</span></td>
       <td>${escapeHtml(station.city)}</td><td>${escapeHtml(station.fuelType || "—")}</td><td>${station.price ? `₱${station.price.toFixed(2)}` : "—"}</td>
       <td>${escapeHtml(station.availability)}</td><td>${escapeHtml(status)}</td><td>
+      <button class="btn btn-sm ${station.verified ? "btn-outline" : "btn-secondary"}" onclick="toggleStationApproval('${escapeHtml(station.id)}')">${station.verified ? "Revoke" : "Approve"}</button>
       <button class="btn btn-sm btn-outline" onclick="editStation('${escapeHtml(station.id)}')">Edit</button>
       <button class="btn btn-sm btn-danger" onclick="removeStation('${escapeHtml(station.id)}')">Delete</button></td></tr>`;
   }).join("") || `<tr><td colspan="7" class="hint">No matching stations.</td></tr>`;
@@ -51,6 +52,20 @@ window.editStation = async function(id) {
   try {
     await updateStationAdmin(station, { name: name.trim(), city: address.trim() });
     showBanner(`Updated ${name.trim()}.`);
+    await renderStations();
+  } catch (error) {
+    showBanner(error.message, "danger");
+  }
+};
+window.toggleStationApproval = async function(id) {
+  const station = stations.find(item => item.id === id);
+  if (!station) return;
+  const verified = !station.verified;
+  const action = verified ? "approve" : "revoke approval for";
+  if (!confirm(`Are you sure you want to ${action} ${station.name}?`)) return;
+  try {
+    await updateStationAdmin(station, { verified });
+    showBanner(`${verified ? "Approved" : "Revoked approval for"} ${station.name}.`);
     await renderStations();
   } catch (error) {
     showBanner(error.message, "danger");
