@@ -8,11 +8,15 @@ import jwt, { type JwtPayload } from "jsonwebtoken";
 import { z, ZodError } from "zod";
 import type { Role, User } from "./domain.js";
 import { firebase } from "./firebase.js";
-import { activeSessions, auditLogs, availabilityReports, notifications, notificationSubscriptions, priceReports, refuels, redemptions, rewardAccounts, rewardRules, rewards, stations, trips, users, vehicles } from "./store.js";
+import { createSession, createUser, findUserByEmail, getAllUsers, getUser, hasSession, revokeSession, saveUser } from "./auth-store.js";
+import { auditLogs, availabilityReports, notifications, notificationSubscriptions, priceReports, refuels, redemptions, rewardAccounts, rewardRules, rewards, stations, trips, users, vehicles } from "./store.js";
 
 const app = express();
 if (process.env.VERCEL === "1" && !process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET must be configured in the Vercel project environment.");
+}
+if (process.env.VERCEL === "1" && !process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON must be configured on Vercel for persistent accounts and sessions.");
 }
 const jwtSecret = process.env.JWT_SECRET ?? "local-development-secret-change-me";
 const accessTtl = process.env.ACCESS_TOKEN_TTL ?? "15m";
@@ -53,9 +57,9 @@ function publicUser(user: User) {
   return safeUser;
 }
 
-function issueTokens(user: User) {
+async function issueTokens(user: User) {
   const sessionId = randomUUID();
-  activeSessions.add(sessionId);
+  await createSession(sessionId, user.id);
   const claims = { sub: user.id, role: user.role, sid: sessionId };
   return {
     accessToken: jwt.sign(claims, jwtSecret, { expiresIn: accessTtl as jwt.SignOptions["expiresIn"] }),
@@ -63,21 +67,22 @@ function issueTokens(user: User) {
   };
 }
 
-function authenticate(req: Request, res: Response, next: NextFunction) {
+async function authenticate(req: Request, res: Response, next: NextFunction) {
   const token = req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return res.status(401).json({ error: "Authentication required" });
+  let payload: JwtPayload;
   try {
-    const payload = jwt.verify(token, jwtSecret) as JwtPayload;
-    if (typeof payload.sub !== "string" || typeof payload.sid !== "string" || !activeSessions.has(payload.sid)) {
-      return res.status(401).json({ error: "Invalid or expired session" });
-    }
-    const user = users.get(payload.sub);
-    if (!user || user.suspended) return res.status(401).json({ error: "Account unavailable" });
-    req.auth = { userId: user.id, role: user.role, sessionId: payload.sid };
-    return next();
+    payload = jwt.verify(token, jwtSecret) as JwtPayload;
   } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
+  if (typeof payload.sub !== "string" || typeof payload.sid !== "string" || !(await hasSession(payload.sid))) {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+  const user = await getUser(payload.sub);
+  if (!user || user.suspended) return res.status(401).json({ error: "Account unavailable" });
+  req.auth = { userId: user.id, role: user.role, sessionId: payload.sid };
+  return next();
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
@@ -200,69 +205,71 @@ app.get("/", (_req, res) => res.json({ name: "PetroVision API", status: "ok", he
 app.post("/api/auth/register", async (req, res) => {
   const input = validate(z.object({ email: z.email(), password: z.string().min(8), displayName: z.string().min(1).max(100) }), req.body);
   const email = input.email.toLowerCase();
-  if ([...users.values()].some((user) => user.email === email)) return res.status(409).json({ error: "Email already registered" });
   const isBootstrapAdmin = process.env.ADMIN_EMAIL?.toLowerCase() === email;
   const user: User = { id: randomUUID(), email, displayName: input.displayName, role: isBootstrapAdmin ? "admin" : "user", passwordHash: await bcrypt.hash(input.password, 10), suspended: false, createdAt: new Date().toISOString() };
-  users.set(user.id, user);
+  if (!(await createUser(user))) return res.status(409).json({ error: "Email already registered" });
   rewardAccount(user.id);
   awardContribution(user.id, "signup");
-  return res.status(201).json({ user: publicUser(user), ...issueTokens(user) });
+  return res.status(201).json({ user: publicUser(user), ...await issueTokens(user) });
 });
 
 app.post("/api/auth/login", async (req, res) => {
   const input = validate(z.object({ email: z.email(), password: z.string().min(1) }), req.body);
-  const user = [...users.values()].find((candidate) => candidate.email === input.email.toLowerCase());
+  const user = await findUserByEmail(input.email.toLowerCase());
   if (!user || user.suspended || !(await bcrypt.compare(input.password, user.passwordHash))) return res.status(401).json({ error: "Invalid email or password" });
-  return res.json({ user: publicUser(user), ...issueTokens(user) });
+  return res.json({ user: publicUser(user), ...await issueTokens(user) });
 });
 
-app.post("/api/auth/refresh", (req, res) => {
+app.post("/api/auth/refresh", async (req, res) => {
   const input = validate(z.object({ refreshToken: z.string() }), req.body);
+  let payload: JwtPayload;
   try {
-    const payload = jwt.verify(input.refreshToken, jwtSecret) as JwtPayload;
-    if (payload.kind !== "refresh" || typeof payload.sub !== "string" || typeof payload.sid !== "string" || !activeSessions.has(payload.sid)) {
-      return res.status(401).json({ error: "Invalid refresh token" });
-    }
-    const user = users.get(payload.sub);
-    if (!user || user.suspended) return res.status(401).json({ error: "Account unavailable" });
-    activeSessions.delete(payload.sid);
-    return res.json(issueTokens(user));
+    payload = jwt.verify(input.refreshToken, jwtSecret) as JwtPayload;
   } catch {
     return res.status(401).json({ error: "Invalid or expired refresh token" });
   }
+  if (payload.kind !== "refresh" || typeof payload.sub !== "string" || typeof payload.sid !== "string" || !(await hasSession(payload.sid))) {
+    return res.status(401).json({ error: "Invalid refresh token" });
+  }
+  const user = await getUser(payload.sub);
+  if (!user || user.suspended) return res.status(401).json({ error: "Account unavailable" });
+  await revokeSession(payload.sid);
+  return res.json(await issueTokens(user));
 });
 
-app.post("/api/auth/logout", authenticate, (req, res) => {
-  activeSessions.delete(req.auth!.sessionId);
+app.post("/api/auth/logout", authenticate, async (req, res) => {
+  await revokeSession(req.auth!.sessionId);
   return res.status(204).end();
 });
 
-app.get("/api/users/me", authenticate, (req, res) => {
-  const user = users.get(req.auth!.userId);
+app.get("/api/users/me", authenticate, async (req, res) => {
+  const user = await getUser(req.auth!.userId);
   return user ? res.json(publicUser(user)) : res.status(404).json({ error: "User not found" });
 });
 
-app.put("/api/users/me", authenticate, (req, res) => {
+app.put("/api/users/me", authenticate, async (req, res) => {
   const input = validate(z.object({ displayName: z.string().min(1).max(100).optional(), email: z.email().optional() }).refine((data) => Object.keys(data).length > 0), req.body);
-  const user = users.get(req.auth!.userId);
+  const user = await getUser(req.auth!.userId);
   if (!user) return res.status(404).json({ error: "User not found" });
   if (input.email) user.email = input.email.toLowerCase();
   if (input.displayName) user.displayName = input.displayName;
+  await saveUser(user);
   return res.json(publicUser(user));
 });
 
-app.get("/api/admin/users", authenticate, requireAdmin, (_req, res) => res.json([...users.values()].map((user) => ({
+app.get("/api/admin/users", authenticate, requireAdmin, async (_req, res) => res.json((await getAllUsers()).map((user) => ({
   ...publicUser(user),
   points: rewardAccount(user.id).points
 }))));
 
-app.put("/api/admin/users/:id/role", authenticate, requireAdmin, (req, res) => {
+app.put("/api/admin/users/:id/role", authenticate, requireAdmin, async (req, res) => {
   const input = validate(z.object({ role: z.enum(["user", "admin"]), suspended: z.boolean().optional() }), req.body);
-  const user = users.get(routeId(req));
+  const user = await getUser(routeId(req));
   if (!user) return res.status(404).json({ error: "User not found" });
   const previousRole = user.role;
   user.role = input.role;
   if (input.suspended !== undefined) user.suspended = input.suspended;
+  await saveUser(user);
   recordAudit(req.auth!.userId, "user.access-updated", "user", user.id, { previousRole, role: user.role, suspended: user.suspended });
   return res.json(publicUser(user));
 });
@@ -427,7 +434,8 @@ app.get("/api/refuels", authenticate, (req, res) => {
 app.get("/api/rewards/me", authenticate, (req, res) => res.json(rewardAccount(req.auth!.userId)));
 app.get("/api/rewards/rules", authenticate, (_req, res) => res.json([...rewardRules.values()]));
 
-app.get("/api/rewards/leaderboard", authenticate, (_req, res) => {
+app.get("/api/rewards/leaderboard", authenticate, async (_req, res) => {
+  await getAllUsers();
   const leaderboard = [...rewardAccounts.values()]
     .map((account) => {
       const user = users.get(account.userId);
@@ -503,7 +511,8 @@ app.delete("/api/notifications/subscriptions/:id", authenticate, (req, res) => {
   return res.status(204).end();
 });
 
-app.get("/api/admin/dashboard", authenticate, requireAdmin, (_req, res) => {
+app.get("/api/admin/dashboard", authenticate, requireAdmin, async (_req, res) => {
+  await getAllUsers();
   const topContributors = [...rewardAccounts.values()]
     .filter((account) => account.contributions > 0)
     .sort((a, b) => b.contributions - a.contributions)
@@ -518,7 +527,8 @@ app.get("/api/admin/dashboard", authenticate, requireAdmin, (_req, res) => {
   });
 });
 
-app.get("/api/admin/reports", authenticate, requireAdmin, (req, res) => {
+app.get("/api/admin/reports", authenticate, requireAdmin, async (req, res) => {
+  await getAllUsers();
   const filters = validate(z.object({ status: z.enum(["pending", "approved", "rejected"]).optional(), stationId: z.string().optional() }), req.query);
   const result = [...priceReports.values()]
     .filter((report) => !filters.status || report.status === filters.status)
@@ -553,9 +563,9 @@ app.get("/api/admin/audit-logs", authenticate, requireAdmin, (req, res) => {
   return res.json(logs);
 });
 
-app.post("/api/admin/reward-adjustments", authenticate, requireAdmin, (req, res) => {
+app.post("/api/admin/reward-adjustments", authenticate, requireAdmin, async (req, res) => {
   const input = validate(z.object({ userId: z.string().min(1), amount: z.number().int().refine((amount) => amount !== 0), reason: z.string().min(1).max(500) }), req.body);
-  const user = users.get(input.userId);
+  const user = await getUser(input.userId);
   if (!user || user.role === "admin") return res.status(404).json({ error: "User not found" });
   const account = rewardAccount(user.id);
   account.points = Math.max(0, account.points + input.amount);
