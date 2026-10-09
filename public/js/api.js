@@ -207,8 +207,7 @@ async function addVehicle(fields) {
 }
 async function deleteVehicle(id) { return apiDelete(`/vehicles/${encodeURIComponent(id)}`); }
 
-async function getStations() {
-  const records = await apiGet("/stations");
+function mapStationRecords(records) {
   return records.flatMap(station => {
     const reports = station.priceReports?.length ? station.priceReports : [null];
     return reports.map(report => {
@@ -226,14 +225,18 @@ async function getStations() {
       availability: availability?.status || (availability ? (availability.available ? "In Stock" : "Out of Stock") : "Unknown"),
       submittedBy: report?.userId,
       date: report?.reportedAt || station.createdAt || "",
-      verified: report?.verified ?? station.verified,
-      approvalStatus: report?.status ? report.status[0].toUpperCase() + report.status.slice(1) : (station.verified ? "Approved" : "Pending"),
+      verified: station.verified,
+      approvalStatus: station.verified ? "Approved" : "Pending",
+      reportApprovalStatus: report?.status ? report.status[0].toUpperCase() + report.status.slice(1) : "",
       reportId: report?.id,
       priceReports: station.priceReports || [],
       availabilityReports: station.availabilityReports || []
       });
     });
   });
+}
+async function getStations() {
+  return mapStationRecords(await apiGet("/stations"));
 }
 async function addStation(fields) {
   const station = await apiPost("/stations", {
@@ -353,7 +356,7 @@ async function setReportStatus(reportId, status) {
 async function getAdminDashboard() { return apiGet("/admin/dashboard"); }
 async function getAdminAudit() { return apiGet("/admin/audit-logs?limit=200"); }
 async function getAdminUsers() { return apiGet("/admin/users"); }
-async function getAdminStations() { return getStations(); }
+async function getAdminStations() { return mapStationRecords(await apiGet("/admin/stations")); }
 async function getRewardRules() {
   const rules = await apiGet("/admin/rewards/rules");
   return Object.fromEntries(rules.map(rule => [rule.id, rule]));
@@ -370,7 +373,8 @@ async function adjustUserPoints(userId, amount, reason) {
 async function updateStationAdmin(station, fields) {
   return apiPut(`/admin/stations/${encodeURIComponent(station.id)}`, {
     name: fields.name,
-    address: fields.city
+    address: fields.city,
+    ...(fields.verified === undefined ? {} : { verified: fields.verified })
   });
 }
 async function deleteStationAdmin(station) {
