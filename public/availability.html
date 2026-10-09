@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — Availability Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <a href="dashboard.html" class="logo">Petro<span class="accent">Vision</span></a>
+    <nav class="nav-links">
+      <ul>
+        <li><a href="map.html">Map</a></li>
+        <li><a href="trip-estimator.html">Trip Cost</a></li>
+        <li><a href="history.html">History</a></li>
+        <li><a href="rewards.html">Rewards</a></li>
+        <li><a href="garage.html">Garage</a></li>
+        <li><a href="alerts.html">Alerts</a></li>
+        <li><a href="availability.html" class="active">Availability</a></li>
+      </ul>
+    </nav>
+    <a href="profile.html" class="profile-link"><span id="nav-username">...</span></a>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>Fuel Availability Tracker</h1>
+      <p>See which stations currently have stock. Noticed a change at your last stop? Update it here and help the next driver.</p>
+    </div>
+
+    <div id="banner"></div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div class="field-row">
+        <div class="field" style="margin-bottom:0;">
+          <label for="filter-fuel">Fuel type</label>
+          <select id="filter-fuel"><option value="">All fuel types</option></select>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label for="filter-status">Availability</label>
+          <select id="filter-status">
+            <option value="">All statuses</option>
+            <option value="In Stock">In Stock</option>
+            <option value="Low Stock">Low Stock</option>
+            <option value="Out of Stock">Out of Stock</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr><th>Station</th><th>City</th><th>Fuel Type</th><th>Price</th><th>Availability</th><th>Updated</th><th></th></tr>
+        </thead>
+        <tbody id="availability-body"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <footer>
+    PetroVision — a prototype crowdsourced fuel price, station locator, and trip cost estimation system.
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/availability.js"></script>
+</body>
+</html>

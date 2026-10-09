@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — Station & Rewards Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="navbar">
+  <a href="admin-dashboard.html" class="logo"> Petro<span class="accent">Vision</span> <small style="font-size:.65rem;opacity:.7">ADMIN</small></a>
+  <nav class="nav-links"><ul><li><a href="admin-dashboard.html">Audit & Approval</a></li><li><a href="admin-management.html" class="active">Stations & Rewards</a></li><li><a href="dashboard.html">User View</a></li></ul></nav>
+  <a href="#" class="profile-link" id="logout-link">Logout</a>
+</header>
+<main class="container">
+  <div class="page-head"><h1>Station & Rewards Management</h1><p>Manage verified station records and control how many points users earn from contributions.</p></div>
+  <div id="banner"></div>
+
+  <div class="grid-2" style="margin-bottom:20px">
+    <div class="card">
+      <h2>Reward Point Rules</h2><p class="hint">Changes apply to future activities and approved station reports.</p>
+      <form id="reward-form">
+        <div class="field-row">
+          <div class="field"><label>New station report</label><input type="number" id="r-newStation" min="0"></div>
+          <div class="field"><label>Availability update</label><input type="number" id="r-availabilityUpdate" min="0"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Refuel log</label><input type="number" id="r-refuelLog" min="0"></div>
+          <div class="field"><label>Trip log</label><input type="number" id="r-tripLog" min="0"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>New vehicle</label><input type="number" id="r-newVehicle" min="0"></div>
+          <div class="field"><label>New alert</label><input type="number" id="r-newAlert" min="0"></div>
+        </div>
+        <button class="btn" type="submit">Save Reward Rules</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Manual Reward Adjustment</h2><p class="hint">Use for corrections or approved moderation decisions. This action is recorded in the audit log.</p>
+      <form id="points-form">
+        <div class="field"><label>User</label><select id="points-user"></select></div>
+        <div class="field-row"><div class="field"><label>Points (+/-)</label><input type="number" id="points-amount" required></div>
+        <div class="field"><label>Reason</label><input id="points-reason" placeholder="e.g. Verified contribution" required></div></div>
+        <button class="btn btn-secondary" type="submit">Adjust Points</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-head"><div><h2>Station Records</h2><p class="hint">Edit verified station information or remove outdated records.</p></div>
+      <input id="station-search" placeholder="Search station or city..." style="padding:9px;border:1px solid var(--line);border-radius:8px">
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Station</th><th>City</th><th>Fuel</th><th>Price</th><th>Availability</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody id="station-table"></tbody></table></div>
+  </div>
+</main>
+<footer>PetroVision Admin — station and reward management.</footer>
+<script src="js/config.js"></script><script src="js/api.js"></script><script src="js/admin-management.js"></script>
+</body></html>

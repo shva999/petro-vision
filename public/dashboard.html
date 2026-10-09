@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <a href="dashboard.html" class="logo"> Petro<span class="accent">Vision</span></a>
+    <nav class="nav-links">
+      <ul>
+        <li><a href="map.html">Map</a></li>
+        <li><a href="trip-estimator.html">Trip Cost</a></li>
+        <li><a href="history.html">History</a></li>
+        <li><a href="rewards.html">Rewards</a></li>
+        <li><a href="garage.html">Garage</a></li>
+        <li><a href="alerts.html">Alerts</a></li>
+        <li><a href="availability.html">Availability</a></li>
+      </ul>
+    </nav>
+    <a href="profile.html" class="profile-link"><span id="nav-username">...</span></a>
+  </header>
+
+  <main class="container">
+
+    <div class="page-head">
+      <h1 id="welcome-heading">Welcome back.</h1>
+      <p>Here's what's happening with your fuel tracking and community contributions.</p>
+    </div>
+    <div id="banner"></div>
+
+    <!-- Quick stats, filled in by dashboard.js -->
+    <div class="grid-3" style="margin-bottom:30px;">
+      <div class="stat-tile">
+        <div class="label">Your points</div>
+        <div class="value accent" id="stat-points">–</div>
+      </div>
+      <div class="stat-tile">
+        <div class="label">Your badge</div>
+        <div class="value" id="stat-badge">–</div>
+      </div>
+      <div class="stat-tile">
+        <div class="label">Vehicles &amp; submissions</div>
+        <div class="value" id="stat-misc">–</div>
+      </div>
+    </div>
+
+    <h2 style="margin-bottom:14px;">Features</h2>
+    <div class="grid-4" id="feature-grid">
+      <!-- filled in by dashboard.js -->
+    </div>
+
+  </main>
+
+  <footer>
+    PetroVision — a prototype crowdsourced fuel price, station locator, and trip cost estimation system.
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>

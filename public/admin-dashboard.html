@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — Admin Audit & Approval</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="navbar">
+  <a href="admin-dashboard.html" class="logo"> Petro<span class="accent">Vision</span> <small style="font-size:.65rem;opacity:.7">ADMIN</small></a>
+  <nav class="nav-links"><ul>
+    <li><a href="admin-dashboard.html" class="active">Audit & Approval</a></li>
+    <li><a href="admin-management.html">Stations & Rewards</a></li>
+    <li><a href="dashboard.html">User View</a></li>
+  </ul></nav>
+  <a href="#" class="profile-link" id="logout-link">Logout</a>
+</header>
+<main class="container">
+  <div class="page-head">
+    <h1>Admin Audit & Report Approval</h1>
+    <p>Review crowdsourced station reports, approve or reject submissions, and monitor administrator actions.</p>
+  </div>
+  <div id="banner"></div>
+  <div class="grid-4" style="margin-bottom:20px">
+    <div class="stat-tile"><div class="label">Pending Reports</div><div class="value accent" id="stat-pending">0</div></div>
+    <div class="stat-tile"><div class="label">Approved Reports</div><div class="value" id="stat-approved">0</div></div>
+    <div class="stat-tile"><div class="label">Rejected Reports</div><div class="value" id="stat-rejected">0</div></div>
+    <div class="stat-tile"><div class="label">Audit Entries</div><div class="value" id="stat-audit">0</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:20px">
+    <div class="section-head"><div><h2>Report Approval Queue</h2><p class="hint">New station reports remain pending until an admin reviews them.</p></div>
+      <select id="report-filter" style="padding:9px;border:1px solid var(--line);border-radius:8px"><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option><option value="All">All</option></select>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Report</th><th>Submitted By</th><th>Fuel / Price</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody id="report-table"></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Admin Audit Log</h2>
+    <p class="hint">Tracks approvals, rejections, station changes, and reward adjustments.</p>
+    <div class="table-wrap"><table><thead><tr><th>Date</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+    <tbody id="audit-table"></tbody></table></div>
+  </div>
+</main>
+<footer>PetroVision Admin — prototype moderation and management tools.</footer>
+<script src="js/config.js"></script><script src="js/api.js"></script><script src="js/admin-dashboard.js"></script>
+</body></html>

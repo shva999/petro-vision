@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — Price Alerts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <a href="dashboard.html" class="logo"> Petro<span class="accent">Vision</span></a>
+    <nav class="nav-links">
+      <ul>
+        <li><a href="map.html">Map</a></li>
+        <li><a href="trip-estimator.html">Trip Cost</a></li>
+        <li><a href="history.html">History</a></li>
+        <li><a href="rewards.html">Rewards</a></li>
+        <li><a href="garage.html">Garage</a></li>
+        <li><a href="alerts.html" class="active">Alerts</a></li>
+        <li><a href="availability.html">Availability</a></li>
+      </ul>
+    </nav>
+    <a href="profile.html" class="profile-link"><span id="nav-username">...</span></a>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>Fuel Price Alerts</h1>
+      <p>Set a target price and PetroVision checks it against every crowdsourced report. We'll flag it below as soon as a station matches.</p>
+    </div>
+
+    <div id="banner"></div>
+
+    <div class="grid-2">
+      <form id="alert-form" class="card">
+        <h3>Create an alert</h3>
+        <div class="field">
+          <label for="a-fuel">Fuel type</label>
+          <select id="a-fuel" required></select>
+        </div>
+        <div class="field">
+          <label for="a-station">Station</label>
+          <select id="a-station" required></select>
+        </div>
+        <div class="field">
+          <label>Notify me when the price…</label>
+          <div class="radio-row">
+            <label><input type="radio" name="a-condition" value="below" checked> drops below</label>
+            <label><input type="radio" name="a-condition" value="above"> rises above</label>
+          </div>
+        </div>
+        <div class="field">
+          <label for="a-threshold">Target price (₱ per liter)</label>
+          <input type="number" id="a-threshold" step="0.01" min="0" required>
+        </div>
+        <button type="submit" class="btn btn-block">Create Alert</button>
+      </form>
+
+      <div class="card">
+        <h3>Your alerts</h3>
+        <div id="alert-list" class="stack"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    PetroVision — a prototype crowdsourced fuel price, station locator, and trip cost estimation system.
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/alerts.js"></script>
+</body>
+</html>

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — History</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <a href="dashboard.html" class="logo"> Petro<span class="accent">Vision</span></a>
+    <nav class="nav-links">
+      <ul>
+        <li><a href="map.html">Map</a></li>
+        <li><a href="trip-estimator.html">Trip Cost</a></li>
+        <li><a href="history.html" class="active">History</a></li>
+        <li><a href="rewards.html">Rewards</a></li>
+        <li><a href="garage.html">Garage</a></li>
+        <li><a href="alerts.html">Alerts</a></li>
+        <li><a href="availability.html">Availability</a></li>
+      </ul>
+    </nav>
+    <a href="profile.html" class="profile-link"><span id="nav-username">...</span></a>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>Refuel &amp; Trip History</h1>
+      <p>Trips you saved from the Trip Cost Estimator, plus any refueling stops you log yourself.</p>
+    </div>
+
+    <div id="banner"></div>
+    <div id="no-vehicle-notice" style="display:none;" class="banner banner-info">
+      Add a vehicle in your <a href="garage.html" style="text-decoration:underline;">Garage</a> first, so you can log a refuel against it.
+    </div>
+
+    <div class="grid-2">
+      <form id="refuel-form" class="card">
+        <h3>Log a refuel</h3>
+        <div class="field">
+          <label for="r-vehicle">Vehicle</label>
+          <select id="r-vehicle" required></select>
+        </div>
+        <div class="field">
+          <label for="r-station">Station (optional)</label>
+          <select id="r-station"><option value="">Not linked to a station</option></select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="r-liters">Liters</label>
+            <input type="number" id="r-liters" step="0.1" min="0.1" required>
+          </div>
+          <div class="field">
+            <label for="r-price">Price per liter (₱)</label>
+            <input type="number" id="r-price" step="0.01" min="0" required>
+          </div>
+        </div>
+        <p class="hint" id="r-cost-preview"></p>
+        <button type="submit" class="btn btn-block">Log Refuel</button>
+      </form>
+
+      <div class="card">
+        <h3>Total spent so far</h3>
+        <div class="value accent" id="total-spent" style="font-size:2rem; font-family:var(--font-heading);">₱0</div>
+        <p class="hint">Across every trip and refuel saved to your account.</p>
+      </div>
+    </div>
+
+    <h2 style="margin:30px 0 14px;">All entries</h2>
+    <div class="card table-wrap">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Type</th><th>Details</th><th>Vehicle</th><th>Liters</th><th>Cost</th></tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <footer>
+    PetroVision — a prototype crowdsourced fuel price, station locator, and trip cost estimation system.
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/history.js"></script>
+</body>
+</html>

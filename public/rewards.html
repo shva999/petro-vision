@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — Rewards</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <a href="dashboard.html" class="logo"> Petro<span class="accent">Vision</span></a>
+    <nav class="nav-links">
+      <ul>
+        <li><a href="map.html">Map</a></li>
+        <li><a href="trip-estimator.html">Trip Cost</a></li>
+        <li><a href="history.html">History</a></li>
+        <li><a href="rewards.html" class="active">Rewards</a></li>
+        <li><a href="garage.html">Garage</a></li>
+        <li><a href="alerts.html">Alerts</a></li>
+        <li><a href="availability.html">Availability</a></li>
+      </ul>
+    </nav>
+    <a href="profile.html" class="profile-link"><span id="nav-username">...</span></a>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>Gamified Rewards System</h1>
+      <p>Earn points for every accurate contribution. The more the community trusts your reports, the higher you climb.</p>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:26px;">
+      <div class="card">
+        <h3>Your progress</h3>
+        <div style="display:flex; align-items:center; gap:14px; margin-bottom:6px;">
+          <span class="tier-badge" id="my-badge" style="background:#94A3B8;">Newbie</span>
+          <span style="font-family:var(--font-heading); font-size:1.4rem; font-weight:700;" id="my-points">0 pts</span>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%;"></div></div>
+        <p class="hint" id="progress-hint"></p>
+      </div>
+
+      <div class="card">
+        <h3>How to earn points</h3>
+        <ul id="points-guide" style="margin:0; padding-left:20px; color:var(--ink-soft); font-size:0.9rem;"></ul>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Leaderboard</h3>
+        <div id="leaderboard"></div>
+      </div>
+
+      <div class="card">
+        <h3>Your recent activity</h3>
+        <div id="activity-feed" class="stack" style="gap:10px;"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    PetroVision — a prototype crowdsourced fuel price, station locator, and trip cost estimation system.
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/rewards.js"></script>
+</body>
+</html>

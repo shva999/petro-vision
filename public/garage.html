@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — Garage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <a href="dashboard.html" class="logo"> Petro<span class="accent">Vision</span></a>
+    <nav class="nav-links">
+      <ul>
+        <li><a href="map.html">Map</a></li>
+        <li><a href="trip-estimator.html">Trip Cost</a></li>
+        <li><a href="history.html">History</a></li>
+        <li><a href="rewards.html">Rewards</a></li>
+        <li><a href="garage.html" class="active">Garage</a></li>
+        <li><a href="alerts.html">Alerts</a></li>
+        <li><a href="availability.html">Availability</a></li>
+      </ul>
+    </nav>
+    <a href="profile.html" class="profile-link"><span id="nav-username">...</span></a>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>Personalized Vehicle Garage</h1>
+      <p>Manage the vehicles you drive. Your Trip Cost Estimator uses these details to calculate fuel needed.</p>
+    </div>
+
+    <div id="banner"></div>
+
+    <div class="grid-2">
+      <form id="vehicle-form" class="card">
+        <h3>Add a vehicle</h3>
+        <div class="field">
+          <label for="v-name">Nickname</label>
+          <input type="text" id="v-name" placeholder="e.g. My Vios, Dad's Fortuner" required>
+        </div>
+        <div class="field">
+          <label for="v-type">Vehicle type</label>
+          <select id="v-type" required></select>
+        </div>
+        <div class="field">
+          <label for="v-fuel">Fuel type</label>
+          <select id="v-fuel" required></select>
+        </div>
+        <div class="field">
+          <label for="v-eff">Fuel efficiency (km per liter)</label>
+          <input type="number" id="v-eff" step="0.1" min="1" required>
+          <p class="hint">We've suggested a starting number based on the vehicle type — adjust it if you know your actual mileage.</p>
+        </div>
+        <button type="submit" class="btn btn-block">Add Vehicle</button>
+      </form>
+
+      <div class="card">
+        <h3>Your vehicles</h3>
+        <div id="vehicle-list" class="stack"></div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    PetroVision — a prototype crowdsourced fuel price, station locator, and trip cost estimation system.
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/garage.js"></script>
+</body>
+</html>

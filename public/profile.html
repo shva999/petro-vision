@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <a href="dashboard.html" class="logo"> Petro<span class="accent">Vision</span></a>
+    <nav class="nav-links">
+      <ul>
+        <li><a href="map.html">Map</a></li>
+        <li><a href="trip-estimator.html">Trip Cost</a></li>
+        <li><a href="history.html">History</a></li>
+        <li><a href="rewards.html">Rewards</a></li>
+        <li><a href="garage.html">Garage</a></li>
+        <li><a href="alerts.html">Alerts</a></li>
+        <li><a href="availability.html">Availability</a></li>
+      </ul>
+    </nav>
+    <a href="profile.html" class="profile-link active"><span id="nav-username">...</span></a>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>Driver Profile Card</h1>
+      <p>Your basic info, contributions, and rewards — this is what other drivers would see about you.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="card" style="text-align:center;">
+        <div class="avatar" id="profile-avatar"
+             style="width:80px; height:80px; border-radius:50%; background:var(--brand); color:#fff;
+                    display:flex; align-items:center; justify-content:center; font-size:1.6rem; font-weight:700;
+                    margin:0 auto 14px;">--</div>
+        <h2 id="profile-name" style="margin-bottom:2px;">–</h2>
+        <p class="hint" id="profile-username">–</p>
+        <span class="tier-badge" id="profile-badge" style="background:#94A3B8; margin-top:8px;">Newbie</span>
+        <p class="hint" style="margin-top:14px;">Member since <span id="profile-joined">–</span></p>
+        <button class="btn btn-outline btn-block" id="logout-btn" style="margin-top:18px;">Log Out</button>
+      </div>
+
+      <div class="stack">
+        <div class="grid-2">
+          <div class="stat-tile"><div class="label">Total points</div><div class="value accent" id="profile-points">–</div></div>
+          <div class="stat-tile"><div class="label">Reports submitted</div><div class="value" id="profile-submissions">–</div></div>
+        </div>
+        <div class="grid-2">
+          <div class="stat-tile"><div class="label">Vehicles in Garage</div><div class="value" id="profile-vehicles">–</div></div>
+          <div class="stat-tile"><div class="label">Trips &amp; refuels logged</div><div class="value" id="profile-history">–</div></div>
+        </div>
+
+        <div class="card">
+          <h3>Your reported stations</h3>
+          <div id="profile-stations" class="table-wrap"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    PetroVision — a prototype crowdsourced fuel price, station locator, and trip cost estimation system.
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/profile.js"></script>
+</body>
+</html>

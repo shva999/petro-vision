@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PetroVision — Trip Cost Estimator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="navbar">
+    <a href="dashboard.html" class="logo"> Petro<span class="accent">Vision</span></a>
+    <nav class="nav-links">
+      <ul>
+        <li><a href="map.html">Map</a></li>
+        <li><a href="trip-estimator.html" class="active">Trip Cost</a></li>
+        <li><a href="history.html">History</a></li>
+        <li><a href="rewards.html">Rewards</a></li>
+        <li><a href="garage.html">Garage</a></li>
+        <li><a href="alerts.html">Alerts</a></li>
+        <li><a href="availability.html">Availability</a></li>
+      </ul>
+    </nav>
+    <a href="profile.html" class="profile-link"><span id="nav-username">...</span></a>
+  </header>
+
+  <main class="container">
+    <div class="page-head">
+      <h1>Trip Cost Estimator</h1>
+      <p>Pick a starting point, a destination, and one of your vehicles — PetroVision estimates the fuel cost using distance and today's crowdsourced average price.</p>
+    </div>
+
+    <div id="banner"></div>
+    <div id="no-vehicle-notice" style="display:none;" class="banner banner-info">
+      You don't have any vehicles yet. <a href="garage.html" style="text-decoration:underline;">Add one in your Garage</a> before estimating a trip.
+    </div>
+
+    <div class="grid-2">
+      <form id="estimate-form" class="card">
+        <div class="field">
+          <label for="from-city">Starting point</label>
+          <select id="from-city" required></select>
+        </div>
+        <div class="field">
+          <label for="to-city">Destination</label>
+          <select id="to-city" required></select>
+        </div>
+        <div class="field">
+          <label for="vehicle-select">Vehicle</label>
+          <select id="vehicle-select" required></select>
+        </div>
+        <p class="hint" id="vehicle-info"></p>
+        <button type="submit" class="btn btn-block">Estimate Cost</button>
+      </form>
+
+      <div class="card" id="result-card" style="display:none;">
+        <h3>Estimate</h3>
+        <div class="grid-2" style="gap:14px; margin-bottom:10px;">
+          <div class="stat-tile"><div class="label">Distance (road est.)</div><div class="value" id="res-distance">–</div></div>
+          <div class="stat-tile"><div class="label">Fuel needed</div><div class="value" id="res-liters">–</div></div>
+        </div>
+        <div class="grid-2" style="gap:14px; margin-bottom:16px;">
+          <div class="stat-tile"><div class="label">Price used (avg.)</div><div class="value" id="res-price">–</div></div>
+          <div class="stat-tile"><div class="label">Estimated cost</div><div class="value accent" id="res-cost">–</div></div>
+        </div>
+        <button class="btn btn-secondary btn-block" id="save-history-btn">Save this trip to History</button>
+        <p class="hint" style="margin-top:12px;">Estimate only — based on straight-line distance × a road-distance factor, and the current crowdsourced average price. Inter-island trips are estimated as road distance and don't account for ferries or flights.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    PetroVision — a prototype crowdsourced fuel price, station locator, and trip cost estimation system.
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/trip-estimator.js"></script>
+</body>
+</html>
