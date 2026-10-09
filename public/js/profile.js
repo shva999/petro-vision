@@ -16,9 +16,7 @@ function initials(fullName) {
 const stationsBox = document.getElementById("profile-stations");
 (async function loadProfile() {
   try {
-    const [user, account, vehicles, history, stations] = await Promise.all([
-      getCurrentUser(), getRewardAccount(), getVehicles(), getHistory(), getStations()
-    ]);
+    const [user, account] = await Promise.all([getCurrentUser(), getRewardAccount()]);
     const badge = getBadge(account.points);
     document.getElementById("profile-avatar").textContent = initials(user.displayName);
     document.getElementById("profile-name").textContent = user.displayName;
@@ -28,20 +26,29 @@ const stationsBox = document.getElementById("profile-stations");
     document.getElementById("profile-joined").textContent = user.createdAt.slice(0, 10);
     document.getElementById("profile-points").textContent = account.points;
     document.getElementById("profile-submissions").textContent = account.contributions;
-    document.getElementById("profile-vehicles").textContent = vehicles.length;
-    document.getElementById("profile-history").textContent = history.length;
-    const mine = stations.filter(station => station.submittedBy === user.id && station.fuelType);
-    if (mine.length === 0) {
-      stationsBox.innerHTML = `<p class="hint">You haven't reported a station or fuel price yet — try it from the Map page.</p>`;
-    } else {
-      stationsBox.innerHTML = `<table><thead><tr><th>Station</th><th>Fuel</th><th>Price</th><th>Status</th></tr></thead>
-        <tbody>${mine.map(station => `        <tr><td>${escapeHtml(station.name)}</td><td>${escapeHtml(station.fuelType)}</td>
+    const [vehiclesResult, historyResult, stationsResult] = await Promise.allSettled([
+      getVehicles(), getHistory(), getStations()
+    ]);
+    document.getElementById("profile-vehicles").textContent =
+      vehiclesResult.status === "fulfilled" ? vehiclesResult.value.length : "Unavailable";
+    document.getElementById("profile-history").textContent =
+      historyResult.status === "fulfilled" ? historyResult.value.length : "Unavailable";
+    if (vehiclesResult.status === "rejected") console.error("Could not load garage vehicles for the profile.", vehiclesResult.reason);
+    if (historyResult.status === "rejected") console.error("Could not load trip and refuel history for the profile.", historyResult.reason);
+    if (stationsResult.status === "rejected") {
+      stationsBox.innerHTML = `<div class="banner banner-danger">${escapeHtml(stationsResult.reason.message || "Could not load station reports.")}</div>`;
+      return;
+    }
+    const mine = stationsResult.value.filter(station => station.submittedBy === user.id && station.fuelType);
+    stationsBox.innerHTML = mine.length
+      ? `<table><thead><tr><th>Station</th><th>Fuel</th><th>Price</th><th>Status</th></tr></thead>
+        <tbody>${mine.map(station => `<tr><td>${escapeHtml(station.name)}</td><td>${escapeHtml(station.fuelType)}</td>
           <td>₱${station.price.toFixed(2)}</td><td>${station.verified
             ? '<span class="badge badge-success">Verified</span>'
-            : '<span class="badge badge-warning">Pending</span>'}</td></tr>`).join("")}</tbody></table>`;
-    }
+            : '<span class="badge badge-warning">Pending</span>'}</td></tr>`).join("")}</tbody></table>`
+      : `<p class="hint">You haven't reported a station or fuel price yet — try it from the Map page.</p>`;
   } catch (error) {
-    stationsBox.innerHTML = `<div class="banner banner-danger">${escapeHtml(error.message)}</div>`;
+    stationsBox.innerHTML = `<div class="banner banner-danger">${escapeHtml(error.message || "Could not load your profile.")}</div>`;
   }
 })();
 
