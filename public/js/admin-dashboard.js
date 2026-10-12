@@ -13,17 +13,20 @@ function renderReports(reports) {
   const rows = reports.filter(report => filter === "all" || report.status === filter);
   document.getElementById("report-table").innerHTML = rows.map(report => {
     const actions = report.status === "pending"
-      ? `<button class="btn btn-sm" onclick="reviewReport('${escapeHtml(report.id)}', 'approved')">Approve</button>
-         <button class="btn btn-sm btn-danger" onclick="reviewReport('${escapeHtml(report.id)}', 'rejected')">Reject</button>`
+      ? `<button class="btn btn-sm" onclick="reviewReport('${escapeHtml(report.id)}', 'approved', '${report.reportType}')">Approve</button>
+         <button class="btn btn-sm btn-danger" onclick="reviewReport('${escapeHtml(report.id)}', 'rejected', '${report.reportType}')">Reject</button>`
       : `<span class="hint">Reviewed</span>`;
     const stationVisibility = report.station?.verified
       ? `<span class="badge badge-success">Visible on map</span>`
       : report.station
         ? `<span class="badge badge-warning">Pending station approval</span><br><a href="admin-management.html">Review station</a>`
         : `<span class="badge badge-danger">Station record unavailable</span>`;
-    return `<tr><td><strong>${escapeHtml(report.station?.name || "Station")}</strong><br><span class="hint">${escapeHtml(report.station?.address || "")}</span></td>
+    const reportDetails = report.reportType === "availability"
+      ? `${escapeHtml(report.fuelType)}<br>${escapeHtml(report.availabilityStatus || "Availability update")}`
+      : `${escapeHtml(report.fuelType)}<br>₱${Number(report.price).toFixed(2)}`;
+    return `<tr><td><strong>${escapeHtml(report.reportType === "availability" ? "Availability" : "Fuel price")} — ${escapeHtml(report.station?.name || "Station")}</strong><br><span class="hint">${escapeHtml(report.station?.address || "")}</span></td>
       <td>${escapeHtml(report.contributor?.displayName || report.contributor?.email || "Driver")}</td>
-      <td>${escapeHtml(report.fuelType)}<br>₱${Number(report.price).toFixed(2)}</td>
+      <td>${reportDetails}</td>
       <td>${new Date(report.reportedAt).toLocaleDateString()}</td><td>${statusBadge(report.status)}</td><td>${stationVisibility}</td><td>${actions}</td></tr>`;
   }).join("") || `<tr><td colspan="7" class="hint">No reports in this category.</td></tr>`;
 }
@@ -37,7 +40,16 @@ function renderAudit(audit) {
 let reports = [];
 async function render() {
   const [dashboard, audit] = await Promise.all([getAdminDashboard(), getAdminAudit()]);
-  reports = await getAdminReports();
+  const [priceReports, availabilityReports] = await Promise.all([getAdminReports(), getAdminAvailabilityReports()]);
+  reports = [
+    ...priceReports.map(report => ({ ...report, reportType: "price" })),
+    ...availabilityReports.map(report => ({
+      ...report,
+      reportType: "availability",
+      status: report.reviewStatus || "pending",
+      availabilityStatus: report.status
+    }))
+  ].sort((a, b) => b.reportedAt.localeCompare(a.reportedAt));
   document.getElementById("stat-pending").textContent = reports.filter(report => report.status === "pending").length;
   document.getElementById("stat-approved").textContent = reports.filter(report => report.status === "approved").length;
   document.getElementById("stat-rejected").textContent = reports.filter(report => report.status === "rejected").length;
@@ -65,13 +77,15 @@ async function renderStorageStatus() {
     element.textContent = `Could not verify API storage: ${error.message}`;
   }
 }
-window.reviewReport = async function(id, status) {
+window.reviewReport = async function(id, status, reportType = "price") {
   try {
-    await setReportStatus(id, status);
-    const reviewed = reports.find(report => report.id === id);
+    if (reportType === "availability") await setAvailabilityReportStatus(id, status);
+    else await setReportStatus(id, status);
+    const reviewed = reports.find(report => report.id === id && report.reportType === reportType);
     const stationNeedsApproval = status === "approved" && reviewed?.station && !reviewed.station.verified;
     const filterName = status[0].toUpperCase() + status.slice(1);
-    const statusMessage = `Report ${status}. It is now under the ${filterName} filter.`;
+    const reportName = reportType === "availability" ? "Availability report" : "Fuel price report";
+    const statusMessage = `${reportName} ${status}. It is now under the ${filterName} filter.`;
     showBanner(stationNeedsApproval
       ? `${statusMessage} Its station is still pending; approve it under Stations & Rewards before it appears on the map.`
       : statusMessage);
