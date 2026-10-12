@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import express, { type ErrorRequestHandler, type Request, type Response, type NextFunction } from "express";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import { z, ZodError } from "zod";
-import type { Role, User } from "./domain.js";
+import type { PriceReport, Role, User } from "./domain.js";
 import { firebase } from "./firebase.js";
 import { createSession, createUser, findUserByEmail, getAllUsers, getUser, hasSession, revokeSession, saveUser } from "./auth-store.js";
 import { deleteRecord, loadCollection, loadMatchingRecords, loadOwnedRecords, loadRecord, saveRecord } from "./feature-store.js";
@@ -140,15 +140,18 @@ async function recordAudit(actorUserId: string, action: string, entity: string, 
   return log;
 }
 
-async function sendPriceAlerts(report: { id: string; stationId: string; fuelType: string; price: number }) {
+async function sendPriceAlerts(report: PriceReport) {
+  if (report.status !== "approved" || !report.verified) return;
   const station = await loadRecord("stations", stations, report.stationId);
-  if (!station) return;
+  if (!station?.verified) return;
+  const existingNotifications = await loadMatchingRecords("notifications", notifications, "priceReportId", report.id);
+  const notifiedUsers = new Set(existingNotifications.map((notification) => notification.userId));
   const subscriptions = await loadMatchingRecords("notificationSubscriptions", notificationSubscriptions, "stationId", report.stationId);
   for (const subscription of subscriptions) {
     const matchesPrice = (subscription.condition ?? "below") === "above"
       ? report.price >= subscription.maxPrice
       : report.price <= subscription.maxPrice;
-    if (subscription.stationId !== report.stationId || subscription.fuelType.toLowerCase() !== report.fuelType.toLowerCase() || !matchesPrice) continue;
+    if (subscription.stationId !== report.stationId || subscription.fuelType.toLowerCase() !== report.fuelType.toLowerCase() || !matchesPrice || notifiedUsers.has(subscription.userId)) continue;
     const notification = {
       id: randomUUID(),
       userId: subscription.userId,
@@ -160,6 +163,7 @@ async function sendPriceAlerts(report: { id: string; stationId: string; fuelType
       read: false
     };
     await saveRecord("notifications", notifications, notification.id, notification);
+    notifiedUsers.add(subscription.userId);
     if (firebase && subscription.fcmToken) {
       void firebase.messaging.send({
         token: subscription.fcmToken,
@@ -199,7 +203,7 @@ async function routeDistance(origin: { latitude: number; longitude: number }, de
 
 function latestPrice(stationId: string, fuelType: string) {
   return [...priceReports.values()]
-    .filter((report) => report.stationId === stationId && report.fuelType.toLowerCase() === fuelType.toLowerCase() && report.verified)
+    .filter((report) => report.stationId === stationId && report.fuelType.toLowerCase() === fuelType.toLowerCase() && report.verified && report.status === "approved")
     .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))[0]?.price;
 }
 
@@ -322,8 +326,8 @@ app.get("/api/stations/nearby", authenticate, async (req, res) => {
   const nearby = [...stations.values()].filter((station) => station.verified).map((station) => ({
     ...station,
     distanceKm: distanceKm(origin, station),
-    priceReports: [...priceReports.values()].filter((report) => report.stationId === station.id).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)),
-    availabilityReports: [...availabilityReports.values()].filter((report) => report.stationId === station.id).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
+    priceReports: [...priceReports.values()].filter((report) => report.stationId === station.id && report.status === "approved" && report.verified).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)),
+    availabilityReports: [...availabilityReports.values()].filter((report) => report.stationId === station.id && report.reviewStatus === "approved").sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
   }))
     .filter((station) => station.distanceKm <= input.radius).sort((a, b) => a.distanceKm - b.distanceKm);
   return res.json(nearby);
@@ -337,8 +341,8 @@ app.get("/api/stations", authenticate, async (_req, res) => {
   ]);
   return res.json([...stations.values()].filter((station) => station.verified).map((station) => ({
     ...station,
-    priceReports: [...priceReports.values()].filter((report) => report.stationId === station.id).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)),
-    availabilityReports: [...availabilityReports.values()].filter((report) => report.stationId === station.id).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
+    priceReports: [...priceReports.values()].filter((report) => report.stationId === station.id && report.status === "approved" && report.verified).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)),
+    availabilityReports: [...availabilityReports.values()].filter((report) => report.stationId === station.id && report.reviewStatus === "approved").sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
   })));
 });
 
@@ -349,7 +353,11 @@ app.get("/api/stations/:id", authenticate, async (req, res) => {
     loadMatchingRecords("priceReports", priceReports, "stationId", station.id),
     loadMatchingRecords("availabilityReports", availabilityReports, "stationId", station.id)
   ]);
-  return res.json({ ...station, priceReports: stationPriceReports, availability: stationAvailabilityReports });
+  return res.json({
+    ...station,
+    priceReports: stationPriceReports.filter((report) => report.status === "approved" && report.verified),
+    availability: stationAvailabilityReports.filter((report) => report.reviewStatus === "approved")
+  });
 });
 
 app.post("/api/stations", authenticate, async (req, res) => {
@@ -369,7 +377,6 @@ app.post("/api/stations/:id/price-reports", authenticate, async (req, res) => {
   await saveRecord("priceReports", priceReports, report.id, report);
   const pointsAwarded = await awardContribution(req.auth!.userId, "price-report");
   await recordAudit(req.auth!.userId, "price-report.submitted", "price-report", report.id, { stationId: report.stationId, status: report.status, pointsAwarded });
-  await sendPriceAlerts(report);
   return res.status(201).json(report);
 });
 
@@ -377,17 +384,17 @@ app.get("/api/stations/:id/price-reports", authenticate, async (req, res) => {
   const station = await loadRecord("stations", stations, routeId(req));
   if (!station || !station.verified) return res.status(404).json({ error: "Station not found" });
   const reports = await loadMatchingRecords("priceReports", priceReports, "stationId", routeId(req));
-  return res.json(reports.sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)));
+  return res.json(reports.filter((report) => report.status === "approved" && report.verified).sort((a, b) => b.reportedAt.localeCompare(a.reportedAt)));
 });
 
-app.put("/api/price-reports/:id/verify", authenticate, async (req, res) => {
+app.put("/api/price-reports/:id/verify", authenticate, requireAdmin, async (req, res) => {
   const report = await loadRecord("priceReports", priceReports, routeId(req));
   if (!report) return res.status(404).json({ error: "Price report not found" });
-  if (req.auth!.role !== "admin" && report.userId === req.auth!.userId) return res.status(403).json({ error: "Users cannot verify their own reports" });
   report.verified = validate(z.object({ verified: z.boolean() }), req.body).verified;
   report.status = report.verified ? "approved" : "rejected";
   await saveRecord("priceReports", priceReports, report.id, report);
   await recordAudit(req.auth!.userId, report.verified ? "price-report.approved" : "price-report.rejected", "price-report", report.id, { stationId: report.stationId, status: report.status });
+  if (report.verified) await sendPriceAlerts(report);
   return res.json(report);
 });
 
@@ -406,12 +413,43 @@ app.post("/api/stations/:id/availability", authenticate, async (req, res) => {
     fuelType: input.fuelType,
     available: input.status ? input.status !== "Out of Stock" : input.available!,
     ...(input.status ? { status: input.status } : {}),
+    reviewStatus: "pending" as const,
     reportedAt: new Date().toISOString()
   };
   await saveRecord("availabilityReports", availabilityReports, report.id, report);
   const pointsAwarded = await awardContribution(req.auth!.userId, "availability-report");
   await recordAudit(req.auth!.userId, "availability-report.submitted", "availability-report", report.id, { stationId: report.stationId, pointsAwarded });
   return res.status(201).json(report);
+});
+
+app.get("/api/admin/availability-reports", authenticate, requireAdmin, async (_req, res) => {
+  await getAllUsers();
+  await Promise.all([
+    loadCollection("availabilityReports", availabilityReports),
+    loadCollection("stations", stations, true)
+  ]);
+  const reports = [...availabilityReports.values()]
+    .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
+    .map((report) => ({
+      ...report,
+      reviewStatus: report.reviewStatus ?? "pending",
+      station: stations.get(report.stationId),
+      contributor: users.has(report.userId) ? publicUser(users.get(report.userId)!) : undefined
+    }));
+  return res.json(reports);
+});
+
+app.put("/api/admin/availability-reports/:id/status", authenticate, requireAdmin, async (req, res) => {
+  const input = validate(z.object({ status: z.enum(["approved", "rejected"]) }), req.body);
+  const report = await loadRecord("availabilityReports", availabilityReports, routeId(req));
+  if (!report) return res.status(404).json({ error: "Availability report not found" });
+  report.reviewStatus = input.status;
+  await saveRecord("availabilityReports", availabilityReports, report.id, report);
+  await recordAudit(req.auth!.userId, `availability-report.${input.status}`, "availability-report", report.id, {
+    stationId: report.stationId,
+    status: report.reviewStatus
+  });
+  return res.json(report);
 });
 
 const estimateSchema = z.object({ origin: pointSchema, destination: pointSchema, vehicleId: z.string(), fuelType: z.string().optional() });
@@ -520,7 +558,16 @@ app.post("/api/rewards/redeem", authenticate, async (req, res) => {
 });
 
 app.get("/api/notifications", authenticate, async (req, res) => {
-  const ownNotifications = (await loadMatchingRecords("notifications", notifications, "userId", req.auth!.userId))
+  const [userNotifications] = await Promise.all([
+    loadMatchingRecords("notifications", notifications, "userId", req.auth!.userId),
+    loadCollection("priceReports", priceReports),
+    loadCollection("stations", stations, true)
+  ]);
+  const ownNotifications = userNotifications
+    .filter((notification) => {
+      const report = priceReports.get(notification.priceReportId);
+      return report?.status === "approved" && report.verified && stations.get(notification.stationId)?.verified;
+    })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return res.json({ notifications: ownNotifications, unreadCount: ownNotifications.filter((notification) => !notification.read).length });
 });
@@ -533,7 +580,8 @@ app.post("/api/notifications/subscribe", authenticate, async (req, res) => {
     condition: z.enum(["below", "above"]).default("below"),
     fcmToken: z.string().min(1).optional()
   }), req.body);
-  if (!(await loadRecord("stations", stations, input.stationId))) return res.status(404).json({ error: "Station not found" });
+  const station = await loadRecord("stations", stations, input.stationId);
+  if (!station?.verified) return res.status(404).json({ error: "Station not found" });
   const userSubscriptions = await loadMatchingRecords("notificationSubscriptions", notificationSubscriptions, "userId", req.auth!.userId);
   const existing = userSubscriptions.find((subscription) =>
     subscription.userId === req.auth!.userId
@@ -565,6 +613,7 @@ app.get("/api/admin/dashboard", authenticate, requireAdmin, async (_req, res) =>
   await Promise.all([
     loadCollection("rewardAccounts", rewardAccounts),
     loadCollection("priceReports", priceReports),
+    loadCollection("availabilityReports", availabilityReports),
     loadCollection("stations", stations, true)
   ]);
   const topContributors = [...rewardAccounts.values()]
@@ -576,10 +625,13 @@ app.get("/api/admin/dashboard", authenticate, requireAdmin, async (_req, res) =>
     })
     .slice(0, 10);
   const reports = [...priceReports.values()];
+  const stationReports = [...availabilityReports.values()];
   return res.json({
     activeStations: [...stations.values()].filter((station) => station.verified).length,
-    pendingReports: reports.filter((report) => report.status === "pending").length,
-    flaggedReports: reports.filter((report) => report.status === "rejected").length,
+    pendingReports: reports.filter((report) => report.status === "pending").length
+      + stationReports.filter((report) => (report.reviewStatus ?? "pending") === "pending").length,
+    flaggedReports: reports.filter((report) => report.status === "rejected").length
+      + stationReports.filter((report) => report.reviewStatus === "rejected").length,
     topContributors
   });
 });
@@ -624,6 +676,7 @@ app.put("/api/admin/reports/:id/status", authenticate, requireAdmin, async (req,
   report.verified = input.status === "approved";
   await saveRecord("priceReports", priceReports, report.id, report);
   await recordAudit(req.auth!.userId, `price-report.${input.status}`, "price-report", report.id, { stationId: report.stationId, status: report.status });
+  if (report.verified) await sendPriceAlerts(report);
   return res.json(report);
 });
 
@@ -668,6 +721,12 @@ app.put("/api/admin/stations/:id", authenticate, requireAdmin, async (req, res) 
   const wasVerified = station.verified;
   Object.assign(station, input);
   await saveRecord("stations", stations, station.id, station);
+  if (input.verified === true && !wasVerified) {
+    const approvedReports = await loadMatchingRecords("priceReports", priceReports, "stationId", station.id);
+    await Promise.all(approvedReports
+      .filter((report) => report.status === "approved" && report.verified)
+      .map(sendPriceAlerts));
+  }
   const action = input.verified === true && !wasVerified
     ? "station.approved"
     : input.verified === false && wasVerified
