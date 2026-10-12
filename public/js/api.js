@@ -187,6 +187,7 @@ async function getCurrentUser() {
   if (session) setSession(user, session.accessToken, session.refreshToken);
   return user;
 }
+async function getApiHealth() { return apiGet("/health"); }
 
 async function getVehicles() {
   return (await apiGet("/vehicles")).map(vehicle => ({
