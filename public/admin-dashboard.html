@@ -1,50 +1,94 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PetroVision — Admin Audit & Approval</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
-</head>
-<body>
-<header class="navbar">
-  <a href="admin-dashboard.html" class="logo"> Petro<span class="accent">Vision</span> <small style="font-size:.65rem;opacity:.7">ADMIN</small></a>
-  <nav class="nav-links"><ul>
-    <li><a href="admin-dashboard.html" class="active">Audit & Approval</a></li>
-    <li><a href="admin-management.html">Stations & Rewards</a></li>
-    <li><a href="dashboard.html">User View</a></li>
-  </ul></nav>
-  <a href="#" class="profile-link" id="logout-link">Logout</a>
-</header>
-<main class="container">
-  <div class="page-head">
-    <h1>Admin Audit & Report Approval</h1>
-    <p>Review crowdsourced station reports, approve or reject submissions, and monitor administrator actions.</p>
-  </div>
-  <div id="banner"></div>
-  <div class="grid-4" style="margin-bottom:20px">
-    <div class="stat-tile"><div class="label">Pending Reports</div><div class="value accent" id="stat-pending">0</div></div>
-    <div class="stat-tile"><div class="label">Approved Reports</div><div class="value" id="stat-approved">0</div></div>
-    <div class="stat-tile"><div class="label">Rejected Reports</div><div class="value" id="stat-rejected">0</div></div>
-    <div class="stat-tile"><div class="label">Audit Entries</div><div class="value" id="stat-audit">0</div></div>
-  </div>
+requireAdmin();
+paintNavUser();
 
-  <div class="card" style="margin-bottom:20px">
-    <div class="section-head"><div><h2>Report Approval Queue</h2><p class="hint">New station reports remain pending until an admin reviews them.</p></div>
-      <select id="report-filter" style="padding:9px;border:1px solid var(--line);border-radius:8px"><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option><option value="All">All</option></select>
-    </div>
-    <div class="table-wrap"><table><thead><tr><th>Report</th><th>Submitted By</th><th>Fuel / Price</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
-    <tbody id="report-table"></tbody></table></div>
-  </div>
+function statusBadge(status) {
+  const cls = status === "approved" ? "badge-success" : status === "rejected" ? "badge-danger" : "badge-warning";
+  return `<span class="badge ${cls}">${status[0].toUpperCase()}${status.slice(1)}</span>`;
+}
+function showBanner(message, type = "success") {
+  document.getElementById("banner").innerHTML = `<div class="banner banner-${type}">${escapeHtml(message)}</div>`;
+}
+function renderReports(reports) {
+  const filter = document.getElementById("report-filter").value.toLowerCase();
+  const rows = reports.filter(report => filter === "all" || report.status === filter);
+  document.getElementById("report-table").innerHTML = rows.map(report => {
+    const actions = report.status === "pending"
+      ? `<button class="btn btn-sm" onclick="reviewReport('${escapeHtml(report.id)}', 'approved')">Approve</button>
+         <button class="btn btn-sm btn-danger" onclick="reviewReport('${escapeHtml(report.id)}', 'rejected')">Reject</button>`
+      : `<span class="hint">Reviewed</span>`;
+    const stationVisibility = report.station?.verified
+      ? `<span class="badge badge-success">Visible on map</span>`
+      : report.station
+        ? `<span class="badge badge-warning">Pending station approval</span><br><a href="admin-management.html">Review station</a>`
+        : `<span class="badge badge-danger">Station record unavailable</span>`;
+    return `<tr><td><strong>${escapeHtml(report.station?.name || "Station")}</strong><br><span class="hint">${escapeHtml(report.station?.address || "")}</span></td>
+      <td>${escapeHtml(report.contributor?.displayName || report.contributor?.email || "Driver")}</td>
+      <td>${escapeHtml(report.fuelType)}<br>₱${Number(report.price).toFixed(2)}</td>
+      <td>${new Date(report.reportedAt).toLocaleDateString()}</td><td>${statusBadge(report.status)}</td><td>${stationVisibility}</td><td>${actions}</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="hint">No reports in this category.</td></tr>`;
+}
+function renderAudit(audit) {
+  document.getElementById("audit-table").innerHTML = audit.slice(0, 30).map(log =>
+    `<tr><td>${new Date(log.createdAt).toLocaleString()}</td><td>${escapeHtml(log.actorEmail)}</td>
+      <td>${escapeHtml(log.action)}</td><td>${escapeHtml(log.entity)} ${escapeHtml(log.entityId)}</td><td>${escapeHtml(JSON.stringify(log.details))}</td></tr>`
+  ).join("") || `<tr><td colspan="5" class="hint">No audit activity yet.</td></tr>`;
+}
 
-  <div class="card">
-    <h2>Admin Audit Log</h2>
-    <p class="hint">Tracks approvals, rejections, station changes, and reward adjustments.</p>
-    <div class="table-wrap"><table><thead><tr><th>Date</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
-    <tbody id="audit-table"></tbody></table></div>
-  </div>
-</main>
-<footer>PetroVision Admin — prototype moderation and management tools.</footer>
-<script src="js/config.js"></script><script src="js/api.js"></script><script src="js/admin-dashboard.js"></script>
-</body></html>
+let reports = [];
+async function render() {
+  const [dashboard, audit] = await Promise.all([getAdminDashboard(), getAdminAudit()]);
+  reports = await getAdminReports();
+  document.getElementById("stat-pending").textContent = reports.filter(report => report.status === "pending").length;
+  document.getElementById("stat-approved").textContent = reports.filter(report => report.status === "approved").length;
+  document.getElementById("stat-rejected").textContent = reports.filter(report => report.status === "rejected").length;
+  document.getElementById("stat-audit").textContent = audit.length;
+  document.getElementById("stat-approved").title = `${dashboard.activeStations} verified stations`;
+  renderReports(reports);
+  renderAudit(audit);
+}
+async function renderStorageStatus() {
+  const element = document.getElementById("api-storage-status");
+  try {
+    const health = await getApiHealth();
+    if (health.persistence === "firestore") {
+      element.className = "banner banner-success";
+      element.textContent = "API storage: Firestore is configured. Logging out does not delete station reports, availability updates, or alerts.";
+    } else if (health.persistence === "memory") {
+      element.className = "banner banner-danger";
+      element.textContent = "API storage: process memory only. Records will be lost when the API restarts; configure Firestore for durable storage.";
+    } else {
+      element.className = "banner banner-info";
+      element.textContent = "API is responding, but its storage mode is unknown. Redeploy the API to expose its persistence status.";
+    }
+  } catch (error) {
+    element.className = "banner banner-danger";
+    element.textContent = `Could not verify API storage: ${error.message}`;
+  }
+}
+window.reviewReport = async function(id, status) {
+  try {
+    await setReportStatus(id, status);
+    const reviewed = reports.find(report => report.id === id);
+    const stationNeedsApproval = status === "approved" && reviewed?.station && !reviewed.station.verified;
+    const filterName = status[0].toUpperCase() + status.slice(1);
+    const statusMessage = `Report ${status}. It is now under the ${filterName} filter.`;
+    showBanner(stationNeedsApproval
+      ? `${statusMessage} Its station is still pending; approve it under Stations & Rewards before it appears on the map.`
+      : statusMessage);
+    await render();
+  } catch (error) {
+    showBanner(error.message, "danger");
+  }
+};
+document.getElementById("report-filter").addEventListener("change", () => renderReports(reports));
+document.getElementById("logout-link").addEventListener("click", async event => {
+  event.preventDefault();
+  try {
+    await signOut();
+  } catch (error) {
+    console.error("The API logout request failed.", error);
+  }
+  location.href = "index.html";
+});
+renderStorageStatus();
+render().catch(error => showBanner(error.message, "danger"));
