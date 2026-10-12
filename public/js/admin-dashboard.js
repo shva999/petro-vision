@@ -16,11 +16,16 @@ function renderReports(reports) {
       ? `<button class="btn btn-sm" onclick="reviewReport('${escapeHtml(report.id)}', 'approved')">Approve</button>
          <button class="btn btn-sm btn-danger" onclick="reviewReport('${escapeHtml(report.id)}', 'rejected')">Reject</button>`
       : `<span class="hint">Reviewed</span>`;
+    const stationVisibility = report.station?.verified
+      ? `<span class="badge badge-success">Visible on map</span>`
+      : report.station
+        ? `<span class="badge badge-warning">Pending station approval</span><br><a href="admin-management.html">Review station</a>`
+        : `<span class="badge badge-danger">Station record unavailable</span>`;
     return `<tr><td><strong>${escapeHtml(report.station?.name || "Station")}</strong><br><span class="hint">${escapeHtml(report.station?.address || "")}</span></td>
       <td>${escapeHtml(report.contributor?.displayName || report.contributor?.email || "Driver")}</td>
       <td>${escapeHtml(report.fuelType)}<br>₱${Number(report.price).toFixed(2)}</td>
-      <td>${new Date(report.reportedAt).toLocaleDateString()}</td><td>${statusBadge(report.status)}</td><td>${actions}</td></tr>`;
-  }).join("") || `<tr><td colspan="6" class="hint">No reports in this category.</td></tr>`;
+      <td>${new Date(report.reportedAt).toLocaleDateString()}</td><td>${statusBadge(report.status)}</td><td>${stationVisibility}</td><td>${actions}</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="hint">No reports in this category.</td></tr>`;
 }
 function renderAudit(audit) {
   document.getElementById("audit-table").innerHTML = audit.slice(0, 30).map(log =>
@@ -41,10 +46,35 @@ async function render() {
   renderReports(reports);
   renderAudit(audit);
 }
+async function renderStorageStatus() {
+  const element = document.getElementById("api-storage-status");
+  try {
+    const health = await getApiHealth();
+    if (health.persistence === "firestore") {
+      element.className = "banner banner-success";
+      element.textContent = "API storage: Firestore is configured. Logging out does not delete station reports, availability updates, or alerts.";
+    } else if (health.persistence === "memory") {
+      element.className = "banner banner-danger";
+      element.textContent = "API storage: process memory only. Records will be lost when the API restarts; configure Firestore for durable storage.";
+    } else {
+      element.className = "banner banner-info";
+      element.textContent = "API is responding, but its storage mode is unknown. Redeploy the API to expose its persistence status.";
+    }
+  } catch (error) {
+    element.className = "banner banner-danger";
+    element.textContent = `Could not verify API storage: ${error.message}`;
+  }
+}
 window.reviewReport = async function(id, status) {
   try {
     await setReportStatus(id, status);
-    showBanner(`Report ${status}.`);
+    const reviewed = reports.find(report => report.id === id);
+    const stationNeedsApproval = status === "approved" && reviewed?.station && !reviewed.station.verified;
+    const filterName = status[0].toUpperCase() + status.slice(1);
+    const statusMessage = `Report ${status}. It is now under the ${filterName} filter.`;
+    showBanner(stationNeedsApproval
+      ? `${statusMessage} Its station is still pending; approve it under Stations & Rewards before it appears on the map.`
+      : statusMessage);
     await render();
   } catch (error) {
     showBanner(error.message, "danger");
@@ -60,4 +90,5 @@ document.getElementById("logout-link").addEventListener("click", async event => 
   }
   location.href = "index.html";
 });
+renderStorageStatus();
 render().catch(error => showBanner(error.message, "danger"));
