@@ -203,8 +203,8 @@ function latestPrice(stationId: string, fuelType: string) {
     .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))[0]?.price;
 }
 
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
-app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+app.get("/health", (_req, res) => res.json({ status: "ok", persistence: firebase ? "firestore" : "memory" }));
+app.get("/api/health", (_req, res) => res.json({ status: "ok", persistence: firebase ? "firestore" : "memory" }));
 app.get("/", (_req, res) => res.json({ name: "PetroVision API", status: "ok", health: "/health", message: "Use the documented /api endpoints for API operations." }));
 
 app.post("/api/auth/register", async (req, res) => {
