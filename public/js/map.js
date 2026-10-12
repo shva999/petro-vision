@@ -179,7 +179,7 @@ reportForm.addEventListener("submit", async (event) => {
     price: document.getElementById("st-price").value,
   });
 
-  banner.innerHTML = `<div class="banner banner-success">Thanks! Your station and price report were submitted. Rewards have been added to your account.</div>`;
+  banner.innerHTML = `<div class="banner banner-success">Thanks! Your station and price report were submitted for admin review. They will appear publicly after approval. Rewards have been added to your account.</div>`;
 
   reportForm.reset();
   reportForm.style.display = "none";
