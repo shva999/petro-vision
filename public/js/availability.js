@@ -58,7 +58,7 @@ async function renderTable() {
       try {
         await updateAvailability(select.dataset.id, select.value, select.dataset.fuel);
         document.getElementById("banner").innerHTML =
-          `<div class="banner banner-success">Availability updated. Points have been added to your rewards account.</div>`;
+          `<div class="banner banner-success">Availability submitted for admin review. It will be visible after approval. Points have been added to your rewards account.</div>`;
         await renderTable();
       } catch (error) {
         document.getElementById("banner").innerHTML = `<div class="banner banner-danger">${escapeHtml(error.message)}</div>`;
