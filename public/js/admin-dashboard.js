@@ -40,7 +40,10 @@ function renderAudit(audit) {
 let reports = [];
 async function render() {
   const [dashboard, audit] = await Promise.all([getAdminDashboard(), getAdminAudit()]);
-  const [priceReports, availabilityReports] = await Promise.all([getAdminReports(), getAdminAvailabilityReports()]);
+  const [priceReports, availabilityReports] = await Promise.all([
+    getAdminReports(),
+    apiGet("/admin/availability-reports")
+  ]);
   reports = [
     ...priceReports.map(report => ({ ...report, reportType: "price" })),
     ...availabilityReports.map(report => ({
