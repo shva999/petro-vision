@@ -82,7 +82,9 @@ async function renderStorageStatus() {
 }
 window.reviewReport = async function(id, status, reportType = "price") {
   try {
-    if (reportType === "availability") await setAvailabilityReportStatus(id, status);
+    if (reportType === "availability") {
+      await apiPut(`/admin/availability-reports/${encodeURIComponent(id)}/status`, { status: status.toLowerCase() });
+    }
     else await setReportStatus(id, status);
     const reviewed = reports.find(report => report.id === id && report.reportType === reportType);
     const stationNeedsApproval = status === "approved" && reviewed?.station && !reviewed.station.verified;
