@@ -48,6 +48,7 @@ export interface AvailabilityReport {
   fuelType: string;
   available: boolean;
   status?: "In Stock" | "Low Stock" | "Out of Stock";
+  reviewStatus?: "pending" | "approved" | "rejected";
   reportedAt: string;
 }
 
